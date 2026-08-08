@@ -7,8 +7,8 @@ import {
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {RootStackParamList} from './types';
 import MainTabs from './MainTabs';
-import ScanLauncherScreen from '../screens/ScanLauncherScreen';
-import ScanScreen from '../screens/ScanScreen';
+import CaptureScreen from '../screens/CaptureScreen';
+import TrimPageScreen from '../screens/TrimPageScreen';
 import FilterScreen from '../screens/FilterScreen';
 import DocumentDetailScreen from '../screens/DocumentDetailScreen';
 import FoldersScreen from '../screens/FoldersScreen';
@@ -21,6 +21,8 @@ import PdfMergeScreen from '../screens/PdfMergeScreen';
 import PdfEditorScreen from '../screens/PdfEditorScreen';
 import PdfPasswordRemoveScreen from '../screens/PdfPasswordRemoveScreen';
 import SignPageScreen from '../screens/SignPageScreen';
+import CropPageScreen from '../screens/CropPageScreen';
+import MarkupPageScreen from '../screens/MarkupPageScreen';
 import SignPdfScreen from '../screens/SignPdfScreen';
 import CollageScreen from '../screens/CollageScreen';
 import PdfWatermarkScreen from '../screens/PdfWatermarkScreen';
@@ -61,13 +63,13 @@ export default function RootNavigator() {
           options={{headerShown: false}}
         />
         <Stack.Screen
-          name="ScanLauncher"
-          component={ScanLauncherScreen}
+          name="Scan"
+          component={CaptureScreen}
           options={{headerShown: false, presentation: 'fullScreenModal'}}
         />
         <Stack.Screen
-          name="Scan"
-          component={ScanScreen}
+          name="Trim"
+          component={TrimPageScreen}
           options={{headerShown: false, presentation: 'fullScreenModal'}}
         />
         <Stack.Screen
@@ -128,6 +130,16 @@ export default function RootNavigator() {
         <Stack.Screen
           name="SignPage"
           component={SignPageScreen}
+          options={{headerShown: false, presentation: 'fullScreenModal'}}
+        />
+        <Stack.Screen
+          name="CropPage"
+          component={CropPageScreen}
+          options={{headerShown: false, presentation: 'fullScreenModal'}}
+        />
+        <Stack.Screen
+          name="MarkupPage"
+          component={MarkupPageScreen}
           options={{headerShown: false, presentation: 'fullScreenModal'}}
         />
         <Stack.Screen

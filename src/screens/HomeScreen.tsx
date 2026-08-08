@@ -1,7 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   RefreshControl,
   SectionList,
@@ -11,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Alert from '../utils/customAlert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Share from 'react-native-share';
 import {useFocusEffect} from '@react-navigation/native';
@@ -21,6 +21,7 @@ import {
   createDocument,
   createFolder,
   deleteDocument,
+  deleteFolder,
   listDocuments,
   listFolders,
   listPages,
@@ -70,27 +71,41 @@ const VIEW_OPTIONS = [
 ];
 
 const SORT_OPTIONS: SheetOption[] = [
-  {key: 'name_asc', label: 'Name (A–Z)', icon: 'arrow-upward'},
-  {key: 'name_desc', label: 'Name (Z–A)', icon: 'arrow-downward'},
-  {
-    key: 'created_desc',
-    label: 'Date Created (Newest First)',
-    icon: 'arrow-downward',
-  },
-  {
-    key: 'created_asc',
-    label: 'Date Created (Oldest First)',
-    icon: 'arrow-upward',
-  },
   {
     key: 'modified_desc',
     label: 'Date Modified (Newest First)',
-    icon: 'arrow-downward',
+    icon: 'sort-clock-descending-outline',
+    family: 'community',
   },
   {
     key: 'modified_asc',
     label: 'Date Modified (Oldest First)',
-    icon: 'arrow-upward',
+    icon: 'sort-clock-ascending-outline',
+    family: 'community',
+  },
+  {
+    key: 'created_desc',
+    label: 'Date Created (Newest First)',
+    icon: 'sort-calendar-descending',
+    family: 'community',
+  },
+  {
+    key: 'created_asc',
+    label: 'Date Created (Oldest First)',
+    icon: 'sort-calendar-ascending',
+    family: 'community',
+  },
+  {
+    key: 'name_asc',
+    label: 'Name (A–Z)',
+    icon: 'sort-alphabetical-ascending',
+    family: 'community',
+  },
+  {
+    key: 'name_desc',
+    label: 'Name (Z–A)',
+    icon: 'sort-alphabetical-descending',
+    family: 'community',
   },
 ];
 
@@ -114,6 +129,9 @@ export default function HomeScreen({navigation}: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
     new Set(),
+  );
+  const [deletableFolderId, setDeletableFolderId] = useState<string | null>(
+    null,
   );
 
   useEffect(() => {
@@ -253,7 +271,7 @@ export default function HomeScreen({navigation}: Props) {
   }
 
   function handleNewScan() {
-    navigation.navigate('ScanLauncher', {folderId: null});
+    navigation.navigate('Scan', {folderId: null});
   }
 
   async function handleCreateFolder() {
@@ -262,6 +280,29 @@ export default function HomeScreen({navigation}: Props) {
       const folder = await createFolder(name.trim());
       navigation.navigate('FolderDetail', {folderId: folder.id});
     }
+  }
+
+  function handleDeleteFolder(folderId: string, folderName: string) {
+    Alert.alert(
+      'Delete folder',
+      `Delete "${folderName}"? Documents inside will move to the root.`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => setDeletableFolderId(null),
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletableFolderId(null);
+            await deleteFolder(folderId);
+            load();
+          },
+        },
+      ],
+    );
   }
 
   function exitSelectionMode() {
@@ -572,7 +613,15 @@ export default function HomeScreen({navigation}: Props) {
               <TouchableOpacity
                 style={styles.sectionHeader}
                 activeOpacity={0.7}
-                onPress={() => toggleFolderCollapsed(section.folderId)}>
+                onPress={() => {
+                  setDeletableFolderId(null);
+                  toggleFolderCollapsed(section.folderId);
+                }}
+                onLongPress={() => {
+                  if (section.folderId !== null) {
+                    setDeletableFolderId(section.folderId);
+                  }
+                }}>
                 <Icon
                   name={section.folderId === null ? 'folder-off' : 'folder'}
                   size={18}
@@ -584,6 +633,25 @@ export default function HomeScreen({navigation}: Props) {
                 <Text style={styles.sectionHeaderCount}>
                   {sectionCounts.get(section.folderId ?? ROOT_SECTION_KEY) ?? 0}
                 </Text>
+                {section.folderId !== null &&
+                  deletableFolderId === section.folderId && (
+                    <TouchableOpacity
+                      onPress={e => {
+                        e.stopPropagation();
+                        handleDeleteFolder(
+                          section.folderId as string,
+                          section.title,
+                        );
+                      }}
+                      hitSlop={8}
+                      style={styles.sectionHeaderDeleteBtn}>
+                      <Icon
+                        name="delete-outline"
+                        size={18}
+                        color={colors.danger}
+                      />
+                    </TouchableOpacity>
+                  )}
                 <Icon
                   name={collapsed ? 'chevron-right' : 'expand-more'}
                   size={20}
@@ -835,6 +903,9 @@ const createStyles = (colors: AppColors) =>
       fontSize: 12,
       fontWeight: '600',
       color: colors.textMuted,
+    },
+    sectionHeaderDeleteBtn: {
+      padding: 4,
     },
     empty: {
       flex: 1,

@@ -1,7 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, {useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   PanResponder,
   StyleSheet,
@@ -9,15 +8,20 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Alert from '../utils/customAlert';
 import Share from 'react-native-share';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { pickPdfFile } from '../services/documentPicker';
-import { addSignatureAtPosition, getPdfPageCount, isPdfRenderable } from '../services/pdfEdit';
-import { renderPdfPage } from '../services/pdfThumbnail';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {pickPdfFile} from '../services/documentPicker';
+import {
+  addSignatureAtPosition,
+  getPdfPageCount,
+  isPdfRenderable,
+} from '../services/pdfEdit';
+import {renderPdfPage} from '../services/pdfThumbnail';
 import SignaturePad from '../components/SignaturePad';
 import Icon from '../components/Icon';
-import { AppColors } from '../theme/colors';
-import { useTheme } from '../theme/ThemeContext';
+import {AppColors} from '../theme/colors';
+import {useTheme} from '../theme/ThemeContext';
 
 type Step = 'pick' | 'choosePage' | 'draw' | 'position' | 'applying';
 
@@ -26,7 +30,7 @@ const SIG_MAX = 220;
 const SIG_DEFAULT = 130;
 
 export default function SignPdfScreen() {
-  const { colors } = useTheme();
+  const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const [step, setStep] = useState<Step>('pick');
@@ -35,14 +39,18 @@ export default function SignPdfScreen() {
   const [pageCount, setPageCount] = useState(0);
   const [pageIndex, setPageIndex] = useState(0);
   const [loadingPdf, setLoadingPdf] = useState(false);
-  const [pagePreview, setPagePreview] = useState<{ uri: string; width: number; height: number } | null>(null);
+  const [pagePreview, setPagePreview] = useState<{
+    uri: string;
+    width: number;
+    height: number;
+  } | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [signatureUri, setSignatureUri] = useState<string | null>(null);
   const [sigWidth, setSigWidth] = useState(SIG_DEFAULT);
-  const [pos, setPos] = useState({ x: 0, y: 0 });
-  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [pos, setPos] = useState({x: 0, y: 0});
+  const [containerSize, setContainerSize] = useState({width: 0, height: 0});
   const [saving, setSaving] = useState(false);
-  const startPos = useRef({ x: 0, y: 0 });
+  const startPos = useRef({x: 0, y: 0});
 
   const panResponder = useRef(
     PanResponder.create({
@@ -51,14 +59,19 @@ export default function SignPdfScreen() {
         startPos.current = pos;
       },
       onPanResponderMove: (_evt, gesture) => {
-        setPos({ x: startPos.current.x + gesture.dx, y: startPos.current.y + gesture.dy });
+        setPos({
+          x: startPos.current.x + gesture.dx,
+          y: startPos.current.y + gesture.dy,
+        });
       },
     }),
   ).current;
 
   async function handlePick() {
     const picked = await pickPdfFile();
-    if (!picked) return;
+    if (!picked) {
+      return;
+    }
 
     try {
       setLoadingPdf(true);
@@ -67,8 +80,8 @@ export default function SignPdfScreen() {
       // pdf-lib-can-open-it check `getPdfPageCount` implies.
       if (!(await isPdfRenderable(picked.uri))) {
         Alert.alert(
-          'Can\'t preview this PDF',
-          'This PDF is password-protected, so its pages can\'t be shown for positioning. Remove its restrictions first in Tools > Remove Restrictions.',
+          "Can't preview this PDF",
+          "This PDF is password-protected, so its pages can't be shown for positioning. Remove its restrictions first in Tools > Remove Restrictions.",
         );
         return;
       }
@@ -79,14 +92,19 @@ export default function SignPdfScreen() {
       setPageIndex(count - 1);
       setStep('choosePage');
     } catch (error) {
-      Alert.alert('Could not open PDF', 'This file may be password-protected or corrupted.');
+      Alert.alert(
+        'Could not open PDF',
+        'This file may be password-protected or corrupted.',
+      );
     } finally {
       setLoadingPdf(false);
     }
   }
 
   async function handleSignatureDone(uri: string) {
-    if (!fileUri) return;
+    if (!fileUri) {
+      return;
+    }
     setSignatureUri(uri);
     try {
       setLoadingPreview(true);
@@ -94,7 +112,10 @@ export default function SignPdfScreen() {
       setPagePreview(preview);
       setStep('position');
     } catch (error) {
-      Alert.alert('Preview failed', 'Could not render this page for positioning.');
+      Alert.alert(
+        'Preview failed',
+        'Could not render this page for positioning.',
+      );
       setStep('choosePage');
     } finally {
       setLoadingPreview(false);
@@ -102,9 +123,9 @@ export default function SignPdfScreen() {
   }
 
   function handleLayout(width: number, height: number) {
-    setContainerSize({ width, height });
+    setContainerSize({width, height});
     const sigHeight = SIG_DEFAULT * 0.45;
-    setPos({ x: width - SIG_DEFAULT - 16, y: height - sigHeight - 16 });
+    setPos({x: width - SIG_DEFAULT - 16, y: height - sigHeight - 16});
   }
 
   function resize(delta: number) {
@@ -112,7 +133,9 @@ export default function SignPdfScreen() {
   }
 
   async function handleApply() {
-    if (!fileUri || !fileName || !signatureUri || containerSize.width === 0) return;
+    if (!fileUri || !fileName || !signatureUri || containerSize.width === 0) {
+      return;
+    }
     try {
       setSaving(true);
       const sigHeight = sigWidth * 0.45;
@@ -132,7 +155,11 @@ export default function SignPdfScreen() {
         heightRatio,
         outputName,
       );
-      await Share.open({ url: `file://${outputPath}`, type: 'application/pdf', failOnCancel: false });
+      await Share.open({
+        url: `file://${outputPath}`,
+        type: 'application/pdf',
+        failOnCancel: false,
+      });
       setStep('pick');
       setFileUri(null);
       setFileName(null);
@@ -159,7 +186,7 @@ export default function SignPdfScreen() {
     const sigHeight = sigWidth * 0.45;
     return (
       <View style={styles.positionContainer}>
-        <View style={[styles.positionHeader, { paddingTop: insets.top + 10 }]}>
+        <View style={[styles.positionHeader, {paddingTop: insets.top + 10}]}>
           <TouchableOpacity onPress={() => setStep('draw')} hitSlop={8}>
             <Icon name="replay" size={22} color={colors.white} />
           </TouchableOpacity>
@@ -170,14 +197,33 @@ export default function SignPdfScreen() {
         </View>
 
         <View
-          style={[styles.previewWrap, { aspectRatio: pagePreview.width / pagePreview.height }]}
-          onLayout={e => handleLayout(e.nativeEvent.layout.width, e.nativeEvent.layout.height)}>
-          <Image source={{ uri: pagePreview.uri }} style={StyleSheet.absoluteFill} resizeMode="stretch" />
+          style={[
+            styles.previewWrap,
+            {aspectRatio: pagePreview.width / pagePreview.height},
+          ]}
+          onLayout={e =>
+            handleLayout(
+              e.nativeEvent.layout.width,
+              e.nativeEvent.layout.height,
+            )
+          }>
+          <Image
+            source={{uri: pagePreview.uri}}
+            style={StyleSheet.absoluteFill}
+            resizeMode="stretch"
+          />
           {loadingPreview ? null : (
             <View
-              style={[styles.signatureOverlay, { left: pos.x, top: pos.y, width: sigWidth, height: sigHeight }]}
+              style={[
+                styles.signatureOverlay,
+                {left: pos.x, top: pos.y, width: sigWidth, height: sigHeight},
+              ]}
               {...panResponder.panHandlers}>
-              <Image source={{ uri: signatureUri ?? undefined }} style={styles.signatureImage} resizeMode="contain" />
+              <Image
+                source={{uri: signatureUri ?? undefined}}
+                style={styles.signatureImage}
+                resizeMode="contain"
+              />
             </View>
           )}
         </View>
@@ -186,13 +232,18 @@ export default function SignPdfScreen() {
           <TouchableOpacity style={styles.sizeBtn} onPress={() => resize(-20)}>
             <Icon name="remove" size={20} color={colors.white} />
           </TouchableOpacity>
-          <Text style={styles.controlsHint}>Drag to position · resize with buttons</Text>
+          <Text style={styles.controlsHint}>
+            Drag to position · resize with buttons
+          </Text>
           <TouchableOpacity style={styles.sizeBtn} onPress={() => resize(20)}>
             <Icon name="add" size={20} color={colors.white} />
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.applyButton} onPress={handleApply} disabled={saving}>
+        <TouchableOpacity
+          style={styles.applyButton}
+          onPress={handleApply}
+          disabled={saving}>
           {saving ? (
             <ActivityIndicator color={colors.white} />
           ) : (
@@ -216,7 +267,8 @@ export default function SignPdfScreen() {
           {fileName}
         </Text>
         <Text style={styles.description}>
-          Pick the page to sign, then draw your signature and drag it into place on that page.
+          Pick the page to sign, then draw your signature and drag it into place
+          on that page.
         </Text>
 
         <View style={styles.pageStepper}>
@@ -224,7 +276,11 @@ export default function SignPdfScreen() {
             style={styles.stepperBtn}
             disabled={pageIndex === 0}
             onPress={() => setPageIndex(p => Math.max(0, p - 1))}>
-            <Icon name="chevron-left" size={22} color={pageIndex === 0 ? colors.textMuted : colors.accent} />
+            <Icon
+              name="chevron-left"
+              size={22}
+              color={pageIndex === 0 ? colors.textMuted : colors.accent}
+            />
           </TouchableOpacity>
           <Text style={styles.stepperText}>
             Page {pageIndex + 1} of {pageCount}
@@ -236,7 +292,9 @@ export default function SignPdfScreen() {
             <Icon
               name="chevron-right"
               size={22}
-              color={pageIndex === pageCount - 1 ? colors.textMuted : colors.accent}
+              color={
+                pageIndex === pageCount - 1 ? colors.textMuted : colors.accent
+              }
             />
           </TouchableOpacity>
         </View>
@@ -256,9 +314,13 @@ export default function SignPdfScreen() {
       </View>
       <Text style={styles.title}>Sign a PDF</Text>
       <Text style={styles.description}>
-        Pick a PDF, draw your signature, then drag it onto the page exactly where you want it.
+        Pick a PDF, draw your signature, then drag it onto the page exactly
+        where you want it.
       </Text>
-      <TouchableOpacity style={styles.button} onPress={handlePick} disabled={loadingPdf}>
+      <TouchableOpacity
+        style={styles.button}
+        onPress={handlePick}
+        disabled={loadingPdf}>
         {loadingPdf ? (
           <ActivityIndicator color={colors.white} />
         ) : (
@@ -272,141 +334,142 @@ export default function SignPdfScreen() {
   );
 }
 
-const createStyles = (colors: AppColors) => StyleSheet.create({
-  center: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 28,
-    backgroundColor: colors.background,
-  },
-  iconWrap: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: colors.accentMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: colors.text,
-    textAlign: 'center',
-  },
-  description: {
-    marginTop: 8,
-    fontSize: 13,
-    color: colors.textMuted,
-    textAlign: 'center',
-    lineHeight: 19,
-  },
-  pageStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    marginTop: 24,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  stepperBtn: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  stepperText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.text,
-    minWidth: 110,
-    textAlign: 'center',
-  },
-  button: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: 28,
-    height: 50,
-    paddingHorizontal: 28,
-    borderRadius: 12,
-    backgroundColor: colors.accent,
-  },
-  buttonText: {
-    color: colors.white,
-    fontWeight: '700',
-    fontSize: 15,
-  },
-  positionContainer: {
-    flex: 1,
-    backgroundColor: colors.black,
-  },
-  positionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingBottom: 12,
-  },
-  positionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: colors.white,
-  },
-  previewWrap: {
-    width: '100%',
-    marginTop: 4,
-    alignSelf: 'center',
-  },
-  signatureOverlay: {
-    position: 'absolute',
-    borderWidth: 1.5,
-    borderColor: colors.accent,
-    borderStyle: 'dashed',
-  },
-  signatureImage: {
-    width: '100%',
-    height: '100%',
-  },
-  controls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 14,
-    paddingVertical: 14,
-  },
-  sizeBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#262626',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  controlsHint: {
-    fontSize: 12,
-    color: '#9AA0A6',
-  },
-  applyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginHorizontal: 16,
-    marginBottom: 20,
-    height: 50,
-    borderRadius: 12,
-    backgroundColor: colors.accent,
-  },
-  applyButtonText: {
-    color: colors.white,
-    fontWeight: '700',
-    fontSize: 15,
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    center: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 28,
+      backgroundColor: colors.background,
+    },
+    iconWrap: {
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      backgroundColor: colors.accentMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 20,
+    },
+    title: {
+      fontSize: 18,
+      fontWeight: '700',
+      color: colors.text,
+      textAlign: 'center',
+    },
+    description: {
+      marginTop: 8,
+      fontSize: 13,
+      color: colors.textMuted,
+      textAlign: 'center',
+      lineHeight: 19,
+    },
+    pageStepper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
+      marginTop: 24,
+      backgroundColor: colors.surface,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: colors.border,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
+    },
+    stepperBtn: {
+      width: 32,
+      height: 32,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    stepperText: {
+      fontSize: 14,
+      fontWeight: '600',
+      color: colors.text,
+      minWidth: 110,
+      textAlign: 'center',
+    },
+    button: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: 28,
+      height: 50,
+      paddingHorizontal: 28,
+      borderRadius: 12,
+      backgroundColor: colors.accent,
+    },
+    buttonText: {
+      color: colors.white,
+      fontWeight: '700',
+      fontSize: 15,
+    },
+    positionContainer: {
+      flex: 1,
+      backgroundColor: colors.black,
+    },
+    positionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 18,
+      paddingBottom: 12,
+    },
+    positionTitle: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.white,
+    },
+    previewWrap: {
+      width: '100%',
+      marginTop: 4,
+      alignSelf: 'center',
+    },
+    signatureOverlay: {
+      position: 'absolute',
+      borderWidth: 1.5,
+      borderColor: colors.accent,
+      borderStyle: 'dashed',
+    },
+    signatureImage: {
+      width: '100%',
+      height: '100%',
+    },
+    controls: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 14,
+      paddingVertical: 14,
+    },
+    sizeBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      backgroundColor: '#262626',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    controlsHint: {
+      fontSize: 12,
+      color: '#9AA0A6',
+    },
+    applyButton: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginHorizontal: 16,
+      marginBottom: 20,
+      height: 50,
+      borderRadius: 12,
+      backgroundColor: colors.accent,
+    },
+    applyButtonText: {
+      color: colors.white,
+      fontWeight: '700',
+      fontSize: 15,
+    },
+  });

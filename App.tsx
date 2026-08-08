@@ -3,16 +3,17 @@
  * @format
  */
 
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, StatusBar, StyleSheet, View } from 'react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import React, {useEffect, useState} from 'react';
+import {ActivityIndicator, StatusBar, StyleSheet, View} from 'react-native';
+import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import {SafeAreaProvider} from 'react-native-safe-area-context';
 import RootNavigator from './src/navigation/RootNavigator';
-import { ScanSessionProvider } from './src/context/ScanSessionContext';
-import { ThemeProvider, useTheme } from './src/theme/ThemeContext';
-import { TextPromptHost } from './src/utils/promptForText';
-import { getDatabase } from './src/db/database';
-import { colors } from './src/theme/colors';
+import {ScanSessionProvider} from './src/context/ScanSessionContext';
+import {ThemeProvider, useTheme} from './src/theme/ThemeContext';
+import {TextPromptHost} from './src/utils/promptForText';
+import {CustomAlertHost} from './src/utils/customAlert';
+import {getDatabase} from './src/db/database';
+import {colors} from './src/theme/colors';
 
 export default function App(): React.JSX.Element {
   const [ready, setReady] = useState(false);
@@ -38,6 +39,7 @@ export default function App(): React.JSX.Element {
           <ScanSessionProvider>
             <ThemedApp />
             <TextPromptHost />
+            <CustomAlertHost />
           </ScanSessionProvider>
         </ThemeProvider>
       </SafeAreaProvider>
@@ -46,7 +48,7 @@ export default function App(): React.JSX.Element {
 }
 
 function ThemedApp() {
-  const { colors: themeColors, resolvedScheme } = useTheme();
+  const {colors: themeColors, resolvedScheme} = useTheme();
   return (
     <>
       <StatusBar

@@ -113,9 +113,16 @@ android {
     }
     buildTypes {
         debug {
+            // Separate applicationId + label so this installs side-by-side with
+            // an existing release build on the same device instead of colliding
+            // with it (same id + different signing key = Android refuses install).
+            applicationIdSuffix ".qa"
+            versionNameSuffix "-qa"
+            resValue "string", "app_name", "Lavati Scanner QA"
             signingConfig signingConfigs.debug
         }
         release {
+            resValue "string", "app_name", "Lavati Scanner"
             // Falls back to the debug key if keystore.properties doesn't exist yet —
             // lets `assembleRelease` still run for local testing, but that output must
             // NOT be distributed with the wrong signature.

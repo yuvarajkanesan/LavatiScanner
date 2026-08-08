@@ -1,6 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {
-  Alert,
   ScrollView,
   StyleSheet,
   Switch,
@@ -8,35 +7,45 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import { TabScreenProps } from '../navigation/types';
-import { APP_VERSION } from '../constants';
-import { AppColors } from '../theme/colors';
-import { ThemeMode, useTheme } from '../theme/ThemeContext';
-import { clearPin, hasPin, setPin, verifyPin } from '../services/pin';
+import Alert from '../utils/customAlert';
+import {useFocusEffect} from '@react-navigation/native';
+import {TabScreenProps} from '../navigation/types';
+import {APP_VERSION} from '../constants';
+import {AppColors} from '../theme/colors';
+import {ThemeMode, useTheme} from '../theme/ThemeContext';
+import {clearPin, hasPin, setPin, verifyPin} from '../services/pin';
 import {
   disableBiometricUnlock,
   enableBiometricUnlock,
   getBiometryLabel,
   isBiometricUnlockEnabled,
 } from '../services/biometrics';
-import { clearExportsCache, getStorageUsageBytes } from '../services/fileStorage';
-import { formatBytes } from '../utils/format';
+import {clearExportsCache, getStorageUsageBytes} from '../services/fileStorage';
+import {getMyEmail, setMyEmail} from '../services/userSettings';
+import {formatBytes} from '../utils/format';
+import {promptForText} from '../utils/promptForText';
 import Icon from '../components/Icon';
 import PinPad from '../components/PinPad';
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 type Props = TabScreenProps<'Settings'>;
 
-type PinFlow = 'set-new' | 'confirm-new' | 'verify-before-change' | 'verify-before-remove' | null;
+type PinFlow =
+  | 'set-new'
+  | 'confirm-new'
+  | 'verify-before-change'
+  | 'verify-before-remove'
+  | null;
 
-const THEME_OPTIONS: { key: ThemeMode; label: string; icon: string }[] = [
-  { key: 'light', label: 'Light', icon: 'light-mode' },
-  { key: 'dark', label: 'Dark', icon: 'dark-mode' },
-  { key: 'system', label: 'System', icon: 'smartphone' },
+const THEME_OPTIONS: {key: ThemeMode; label: string; icon: string}[] = [
+  {key: 'light', label: 'Light', icon: 'light-mode'},
+  {key: 'dark', label: 'Dark', icon: 'dark-mode'},
+  {key: 'system', label: 'System', icon: 'smartphone'},
 ];
 
-export default function SettingsScreen({ navigation }: Props) {
-  const { colors, mode, setMode } = useTheme();
+export default function SettingsScreen({navigation}: Props) {
+  const {colors, mode, setMode} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [pinIsSet, setPinIsSet] = useState(false);
   const [storageBytes, setStorageBytes] = useState(0);
@@ -46,12 +55,14 @@ export default function SettingsScreen({ navigation }: Props) {
   const [biometryLabel, setBiometryLabel] = useState<string | null>(null);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricBusy, setBiometricBusy] = useState(false);
+  const [myEmail, setMyEmailState] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setPinIsSet(await hasPin());
     setStorageBytes(await getStorageUsageBytes());
     setBiometryLabel(await getBiometryLabel());
     setBiometricEnabled(await isBiometricUnlockEnabled());
+    setMyEmailState(await getMyEmail());
   }, []);
 
   useFocusEffect(
@@ -126,12 +137,12 @@ export default function SettingsScreen({ navigation }: Props) {
   async function handleToggleBiometric(value: boolean) {
     setBiometricBusy(true);
     if (value) {
-      const { ok, error } = await enableBiometricUnlock();
+      const {ok, error} = await enableBiometricUnlock();
       if (!ok) {
         Alert.alert(
           'Could not enable',
           `${biometryLabel ?? 'Biometric'} unlock could not be turned on.\n\n` +
-            `Make sure it's set up in your phone's settings (a fingerprint or face is enrolled).` +
+            "Make sure it's set up in your phone's settings (a fingerprint or face is enrolled)." +
             (error ? `\n\nDetails: ${error}` : ''),
         );
       }
@@ -142,12 +153,26 @@ export default function SettingsScreen({ navigation }: Props) {
     load();
   }
 
+  async function handleEditMyEmail() {
+    const value = await promptForText('My email', myEmail ?? '');
+    if (value === null) {
+      return;
+    }
+    const trimmed = value.trim();
+    if (trimmed && !EMAIL_PATTERN.test(trimmed)) {
+      Alert.alert('Invalid email', 'Enter a valid email address.');
+      return;
+    }
+    await setMyEmail(trimmed || null);
+    load();
+  }
+
   function handleClearCache() {
     Alert.alert(
       'Clear cache',
       'This removes cached exported PDFs. Your saved documents are not affected.',
       [
-        { text: 'Cancel', style: 'cancel' },
+        {text: 'Cancel', style: 'cancel'},
         {
           text: 'Clear',
           style: 'destructive',
@@ -160,11 +185,14 @@ export default function SettingsScreen({ navigation }: Props) {
     );
   }
 
-  const pinPadCopy: Record<Exclude<PinFlow, null>, { title: string; subtitle?: string }> = {
-    'set-new': { title: 'Set a PIN', subtitle: 'Choose a 4-digit PIN' },
-    'confirm-new': { title: 'Confirm PIN', subtitle: 'Enter it again' },
-    'verify-before-change': { title: 'Enter current PIN' },
-    'verify-before-remove': { title: 'Enter current PIN' },
+  const pinPadCopy: Record<
+    Exclude<PinFlow, null>,
+    {title: string; subtitle?: string}
+  > = {
+    'set-new': {title: 'Set a PIN', subtitle: 'Choose a 4-digit PIN'},
+    'confirm-new': {title: 'Confirm PIN', subtitle: 'Enter it again'},
+    'verify-before-change': {title: 'Enter current PIN'},
+    'verify-before-remove': {title: 'Enter current PIN'},
   };
 
   return (
@@ -178,8 +206,16 @@ export default function SettingsScreen({ navigation }: Props) {
                 key={option.key}
                 style={[styles.themeChip, active && styles.themeChipActive]}
                 onPress={() => setMode(option.key)}>
-                <Icon name={option.icon} size={20} color={active ? colors.white : colors.accent} />
-                <Text style={[styles.themeChipLabel, active && styles.themeChipLabelActive]}>
+                <Icon
+                  name={option.icon}
+                  size={20}
+                  color={active ? colors.white : colors.accent}
+                />
+                <Text
+                  style={[
+                    styles.themeChipLabel,
+                    active && styles.themeChipLabelActive,
+                  ]}>
                   {option.label}
                 </Text>
               </TouchableOpacity>
@@ -192,7 +228,12 @@ export default function SettingsScreen({ navigation }: Props) {
         {pinIsSet ? (
           <>
             <Row icon="lock" label="Change PIN" onPress={beginChangePin} />
-            <Row icon="lock-open" label="Remove PIN" onPress={beginRemovePin} danger />
+            <Row
+              icon="lock-open"
+              label="Remove PIN"
+              onPress={beginRemovePin}
+              danger
+            />
           </>
         ) : (
           <Row icon="lock" label="Set vault PIN" onPress={beginSetPin} />
@@ -201,14 +242,34 @@ export default function SettingsScreen({ navigation }: Props) {
           <Row
             icon="fingerprint"
             label={`Unlock with ${biometryLabel}`}
-            toggle={{ value: biometricEnabled, onValueChange: handleToggleBiometric, busy: biometricBusy }}
+            toggle={{
+              value: biometricEnabled,
+              onValueChange: handleToggleBiometric,
+              busy: biometricBusy,
+            }}
           />
         )}
       </Section>
 
+      <Section title="Sharing">
+        <Row
+          icon="alternate-email"
+          label={myEmail ? `My email: ${myEmail}` : 'Set my email'}
+          onPress={handleEditMyEmail}
+        />
+      </Section>
+
       <Section title="Storage">
-        <Row icon="sd-storage" label={`Used: ${formatBytes(storageBytes)}`} disabled />
-        <Row icon="delete-sweep" label="Clear cache" onPress={handleClearCache} />
+        <Row
+          icon="sd-storage"
+          label={`Used: ${formatBytes(storageBytes)}`}
+          disabled
+        />
+        <Row
+          icon="delete-sweep"
+          label="Clear cache"
+          onPress={handleClearCache}
+        />
       </Section>
 
       <Section title="Legal">
@@ -228,7 +289,9 @@ export default function SettingsScreen({ navigation }: Props) {
         <Row icon="info-outline" label={`Version ${APP_VERSION}`} disabled />
       </Section>
 
-      <Text style={styles.copyright}>© 2026 Lavati Softwares. All rights reserved.</Text>
+      <Text style={styles.copyright}>
+        © 2026 Lavati Softwares. All rights reserved.
+      </Text>
 
       <PinPad
         visible={pinFlow !== null}
@@ -242,8 +305,14 @@ export default function SettingsScreen({ navigation }: Props) {
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  const { colors } = useTheme();
+function Section({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <View style={styles.section}>
@@ -266,11 +335,19 @@ function Row({
   onPress?: () => void;
   danger?: boolean;
   disabled?: boolean;
-  toggle?: { value: boolean; onValueChange: (value: boolean) => void; busy?: boolean };
+  toggle?: {
+    value: boolean;
+    onValueChange: (value: boolean) => void;
+    busy?: boolean;
+  };
 }) {
-  const { colors } = useTheme();
+  const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const iconColor = danger ? colors.danger : disabled ? colors.textMuted : colors.accent;
+  const iconColor = danger
+    ? colors.danger
+    : disabled
+    ? colors.textMuted
+    : colors.accent;
   return (
     <TouchableOpacity
       style={styles.row}
@@ -278,7 +355,12 @@ function Row({
       disabled={disabled || (!onPress && !toggle)}
       activeOpacity={toggle ? 1 : 0.6}>
       <Icon name={icon} size={20} color={iconColor} />
-      <Text style={[styles.rowLabel, danger && styles.rowLabelDanger, disabled && styles.rowLabelMuted]}>
+      <Text
+        style={[
+          styles.rowLabel,
+          danger && styles.rowLabelDanger,
+          disabled && styles.rowLabelMuted,
+        ]}>
         {label}
       </Text>
       {toggle ? (
@@ -286,96 +368,100 @@ function Row({
           value={toggle.value}
           onValueChange={toggle.onValueChange}
           disabled={toggle.busy}
-          trackColor={{ true: colors.accent, false: colors.border }}
+          trackColor={{true: colors.accent, false: colors.border}}
           thumbColor={colors.white}
         />
       ) : (
-        onPress && !disabled && <Icon name="chevron-right" size={20} color={colors.textMuted} />
+        onPress &&
+        !disabled && (
+          <Icon name="chevron-right" size={20} color={colors.textMuted} />
+        )
       )}
     </TouchableOpacity>
   );
 }
 
-const createStyles = (colors: AppColors) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  content: {
-    padding: 16,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: colors.textMuted,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-    marginLeft: 4,
-  },
-  sectionBody: {
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  themeRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  themeChip: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 12,
-    borderRadius: 10,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  themeChipActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  themeChipLabel: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.accent,
-  },
-  themeChipLabelActive: {
-    color: colors.white,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
-  },
-  rowLabel: {
-    flex: 1,
-    fontSize: 15,
-    color: colors.text,
-    fontWeight: '500',
-  },
-  rowLabelDanger: {
-    color: colors.danger,
-  },
-  rowLabelMuted: {
-    color: colors.textMuted,
-  },
-  copyright: {
-    marginTop: 4,
-    marginBottom: 16,
-    fontSize: 12,
-    color: colors.textMuted,
-    textAlign: 'center',
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    content: {
+      padding: 16,
+    },
+    section: {
+      marginBottom: 24,
+    },
+    sectionTitle: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textMuted,
+      textTransform: 'uppercase',
+      marginBottom: 8,
+      marginLeft: 4,
+    },
+    sectionBody: {
+      backgroundColor: colors.surface,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: colors.border,
+      overflow: 'hidden',
+    },
+    themeRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    themeChip: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      paddingVertical: 12,
+      borderRadius: 10,
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    themeChipActive: {
+      backgroundColor: colors.accent,
+      borderColor: colors.accent,
+    },
+    themeChipLabel: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.accent,
+    },
+    themeChipLabelActive: {
+      color: colors.white,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 16,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    rowLabel: {
+      flex: 1,
+      fontSize: 15,
+      color: colors.text,
+      fontWeight: '500',
+    },
+    rowLabelDanger: {
+      color: colors.danger,
+    },
+    rowLabelMuted: {
+      color: colors.textMuted,
+    },
+    copyright: {
+      marginTop: 4,
+      marginBottom: 16,
+      fontSize: 12,
+      color: colors.textMuted,
+      textAlign: 'center',
+    },
+  });

@@ -24,7 +24,15 @@ export const documentFeatureIcons: Record<
   | 'note'
   | 'pageName'
   | 'editPdf'
-  | 'rotate',
+  | 'rotate'
+  | 'collage'
+  | 'emailMyself'
+  | 'duplicate'
+  | 'moveFolder'
+  | 'crop'
+  | 'markup'
+  | 'shareJpg'
+  | 'shareLongImage',
   FeatureToken
 > = {
   exportPdf: {icon: 'tray-arrow-down', family: 'community', color: '#3B82F6'},
@@ -58,4 +66,20 @@ export const documentFeatureIcons: Record<
     color: '#6366F1',
   },
   rotate: {icon: 'rotate-right', family: 'community', color: '#0891B2'},
+  collage: {icon: 'view-grid-outline', family: 'community', color: '#F97316'},
+  emailMyself: {icon: 'email-outline', family: 'community', color: '#0EA5E9'},
+  duplicate: {icon: 'content-copy', family: 'community', color: '#8B5CF6'},
+  moveFolder: {
+    icon: 'folder-move-outline',
+    family: 'community',
+    color: '#E0A32E',
+  },
+  crop: {icon: 'crop', family: 'community', color: '#0EA5A5'},
+  markup: {icon: 'draw', family: 'community', color: '#8B5CF6'},
+  shareJpg: {icon: 'image-outline', family: 'community', color: '#22C55E'},
+  shareLongImage: {
+    icon: 'image-multiple-outline',
+    family: 'community',
+    color: '#22C55E',
+  },
 };

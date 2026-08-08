@@ -19,3 +19,19 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// react-native-vision-camera pulls in a transitive kotlinx-coroutines-core
+// that Gradle resolves to 1.9.0, which is compiled with Kotlin 2.0 metadata —
+// incompatible with this project's Kotlin 1.8.0 compiler ("Class ... was
+// compiled with an incompatible version of Kotlin"). Pin it down to a
+// version built against Kotlin 1.8 across every subproject (the library
+// module's own compile task needs this too, not just the app module).
+allprojects {
+    configurations.all {
+        resolutionStrategy {
+            force 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
+            force 'org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.7.3'
+            force 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+        }
+    }
+}

@@ -105,3 +105,41 @@ export async function compressImage(
     quality,
   );
 }
+
+export interface QuadCorners {
+  topLeft: {x: number; y: number};
+  topRight: {x: number; y: number};
+  bottomRight: {x: number; y: number};
+  bottomLeft: {x: number; y: number};
+}
+
+/**
+ * Straightens a document photographed at an angle: warps the quadrilateral
+ * given by `corners` (in the source image's own pixel space, top-left
+ * origin) onto a clean rectangle via the native `warpPerspective` module
+ * (Android's `Matrix.setPolyToPoly`), and writes the result to `outputPath`.
+ */
+export async function warpPerspective(
+  sourceUri: string,
+  corners: QuadCorners,
+  outputPath: string,
+  quality: number = 92,
+): Promise<string> {
+  const cleanSource = sourceUri.replace('file://', '');
+  const flatCorners = [
+    corners.topLeft.x,
+    corners.topLeft.y,
+    corners.topRight.x,
+    corners.topRight.y,
+    corners.bottomRight.x,
+    corners.bottomRight.y,
+    corners.bottomLeft.x,
+    corners.bottomLeft.y,
+  ];
+  return ImageFilterModule.warpPerspective(
+    cleanSource,
+    outputPath,
+    flatCorners,
+    quality,
+  );
+}

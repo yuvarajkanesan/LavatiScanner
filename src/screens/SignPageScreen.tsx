@@ -1,7 +1,6 @@
 import React, {useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   PanResponder,
   StyleSheet,
@@ -9,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Alert from '../utils/customAlert';
 import {captureRef} from 'react-native-view-shot';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
@@ -40,14 +40,27 @@ export default function SignPageScreen({navigation, route}: Props) {
   const compositeRef = useRef<View>(null);
   const startPos = useRef({x: 0, y: 0});
 
+  // `panResponder` below is created exactly once via useRef, so its
+  // callbacks close over whatever `pos` was on that first render ({0,0})
+  // forever — reading state directly inside them goes stale. This ref is
+  // kept in sync on every position update instead, so the drag handler
+  // always starts from the signature's real current position rather than
+  // snapping back toward the top-left on every gesture.
+  const posRef = useRef({x: 0, y: 0});
+
+  function updatePos(next: {x: number; y: number}) {
+    posRef.current = next;
+    setPos(next);
+  }
+
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
-        startPos.current = pos;
+        startPos.current = posRef.current;
       },
       onPanResponderMove: (_evt, gesture) => {
-        setPos({
+        updatePos({
           x: startPos.current.x + gesture.dx,
           y: startPos.current.y + gesture.dy,
         });
@@ -61,7 +74,7 @@ export default function SignPageScreen({navigation, route}: Props) {
 
   function handleLayout(width: number, height: number) {
     const sigHeight = SIG_DEFAULT * 0.45;
-    setPos({x: width - SIG_DEFAULT - 16, y: height - sigHeight - 16});
+    updatePos({x: width - SIG_DEFAULT - 16, y: height - sigHeight - 16});
   }
 
   function resize(delta: number) {

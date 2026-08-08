@@ -1,6 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, {useCallback, useMemo, useState} from 'react';
 import {
-  Alert,
   FlatList,
   RefreshControl,
   StyleSheet,
@@ -8,9 +7,10 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
+import Alert from '../utils/customAlert';
+import {useFocusEffect} from '@react-navigation/native';
+import {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {RootStackParamList} from '../navigation/types';
 import {
   createFolder,
   deleteFolder,
@@ -18,22 +18,26 @@ import {
   renameFolder,
   setFolderLocked,
 } from '../db/database';
-import { Folder } from '../types/models';
+import {Folder} from '../types/models';
 
-type FolderRow = Folder & { docCount: number };
-import { hasPin, verifyPin } from '../services/pin';
-import { getBiometryLabel, isBiometricUnlockEnabled, unlockWithBiometrics } from '../services/biometrics';
-import { AppColors } from '../theme/colors';
-import { useTheme } from '../theme/ThemeContext';
+type FolderRow = Folder & {docCount: number};
+import {hasPin, verifyPin} from '../services/pin';
+import {
+  getBiometryLabel,
+  isBiometricUnlockEnabled,
+  unlockWithBiometrics,
+} from '../services/biometrics';
+import {AppColors} from '../theme/colors';
+import {useTheme} from '../theme/ThemeContext';
 import Fab from '../components/Fab';
 import Icon from '../components/Icon';
 import PinPad from '../components/PinPad';
-import { promptForText } from '../utils/promptForText';
+import {promptForText} from '../utils/promptForText';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Folders'>;
 
-export default function FoldersScreen({ navigation }: Props) {
-  const { colors } = useTheme();
+export default function FoldersScreen({navigation}: Props) {
+  const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [folders, setFolders] = useState<FolderRow[]>([]);
   const [pendingFolder, setPendingFolder] = useState<Folder | null>(null);
@@ -70,13 +74,13 @@ export default function FoldersScreen({ navigation }: Props) {
 
   async function handleOpenFolder(folder: Folder) {
     if (!folder.isLocked) {
-      navigation.navigate('FolderDetail', { folderId: folder.id });
+      navigation.navigate('FolderDetail', {folderId: folder.id});
       return;
     }
     if (await isBiometricUnlockEnabled()) {
       const ok = await unlockWithBiometrics();
       if (ok) {
-        navigation.navigate('FolderDetail', { folderId: folder.id });
+        navigation.navigate('FolderDetail', {folderId: folder.id});
         return;
       }
     }
@@ -85,22 +89,26 @@ export default function FoldersScreen({ navigation }: Props) {
   }
 
   async function handleRetryBiometric() {
-    if (!pendingFolder) return;
+    if (!pendingFolder) {
+      return;
+    }
     const ok = await unlockWithBiometrics();
     if (ok) {
       const folder = pendingFolder;
       setPendingFolder(null);
-      navigation.navigate('FolderDetail', { folderId: folder.id });
+      navigation.navigate('FolderDetail', {folderId: folder.id});
     }
   }
 
   async function handlePinSubmit(pin: string) {
-    if (!pendingFolder) return;
+    if (!pendingFolder) {
+      return;
+    }
     const ok = await verifyPin(pin);
     if (ok) {
       const folder = pendingFolder;
       setPendingFolder(null);
-      navigation.navigate('FolderDetail', { folderId: folder.id });
+      navigation.navigate('FolderDetail', {folderId: folder.id});
     } else {
       setPinError('Incorrect PIN, try again.');
     }
@@ -114,10 +122,11 @@ export default function FoldersScreen({ navigation }: Props) {
           'No PIN set',
           'Set a vault PIN in Settings before locking a folder.',
           [
-            { text: 'Cancel', style: 'cancel' },
+            {text: 'Cancel', style: 'cancel'},
             {
               text: 'Go to Settings',
-              onPress: () => navigation.navigate('MainTabs', { screen: 'Settings' }),
+              onPress: () =>
+                navigation.navigate('MainTabs', {screen: 'Settings'}),
             },
           ],
         );
@@ -130,13 +139,17 @@ export default function FoldersScreen({ navigation }: Props) {
 
   function handleLongPress(folder: Folder) {
     Alert.alert(folder.name, undefined, [
-      { text: 'Rename', onPress: () => handleRename(folder) },
+      {text: 'Rename', onPress: () => handleRename(folder)},
       {
         text: folder.isLocked ? 'Unlock' : 'Lock',
         onPress: () => handleToggleLock(folder),
       },
-      { text: 'Delete', style: 'destructive', onPress: () => handleDelete(folder) },
-      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => handleDelete(folder),
+      },
+      {text: 'Cancel', style: 'cancel'},
     ]);
   }
 
@@ -153,7 +166,7 @@ export default function FoldersScreen({ navigation }: Props) {
       'Delete folder',
       `Delete "${folder.name}"? Documents inside will move to the root.`,
       [
-        { text: 'Cancel', style: 'cancel' },
+        {text: 'Cancel', style: 'cancel'},
         {
           text: 'Delete',
           style: 'destructive',
@@ -184,9 +197,14 @@ export default function FoldersScreen({ navigation }: Props) {
           keyExtractor={item => item.id}
           contentContainerStyle={styles.list}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} colors={[colors.accent]} tintColor={colors.accent} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={[colors.accent]}
+              tintColor={colors.accent}
+            />
           }
-          renderItem={({ item }) => (
+          renderItem={({item}) => (
             <TouchableOpacity
               style={styles.row}
               onPress={() => handleOpenFolder(item)}
@@ -230,80 +248,81 @@ export default function FoldersScreen({ navigation }: Props) {
   );
 }
 
-const createStyles = (colors: AppColors) => StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-  },
-  list: {
-    padding: 16,
-  },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    marginBottom: 10,
-  },
-  folderIconWrap: {
-    marginRight: 14,
-  },
-  lockBadge: {
-    position: 'absolute',
-    right: -4,
-    bottom: -4,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: colors.surface,
-  },
-  folderTextWrap: {
-    flex: 1,
-    marginRight: 8,
-  },
-  folderCount: {
-    marginTop: 2,
-    fontSize: 12,
-    color: colors.textMuted,
-  },
-  folderName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: colors.text,
-    flexShrink: 1,
-  },
-  empty: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-  },
-  emptyIconWrap: {
-    width: 76,
-    height: 76,
-    borderRadius: 38,
-    backgroundColor: colors.accentMuted,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 16,
-  },
-  emptyTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  emptySubtitle: {
-    marginTop: 6,
-    fontSize: 14,
-    color: colors.textMuted,
-    textAlign: 'center',
-  },
-});
+const createStyles = (colors: AppColors) =>
+  StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.background,
+    },
+    list: {
+      padding: 16,
+    },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+      borderRadius: 10,
+      paddingVertical: 14,
+      paddingHorizontal: 14,
+      marginBottom: 10,
+    },
+    folderIconWrap: {
+      marginRight: 14,
+    },
+    lockBadge: {
+      position: 'absolute',
+      right: -4,
+      bottom: -4,
+      width: 16,
+      height: 16,
+      borderRadius: 8,
+      backgroundColor: colors.accent,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1.5,
+      borderColor: colors.surface,
+    },
+    folderTextWrap: {
+      flex: 1,
+      marginRight: 8,
+    },
+    folderCount: {
+      marginTop: 2,
+      fontSize: 12,
+      color: colors.textMuted,
+    },
+    folderName: {
+      fontSize: 15,
+      fontWeight: '600',
+      color: colors.text,
+      flexShrink: 1,
+    },
+    empty: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 32,
+    },
+    emptyIconWrap: {
+      width: 76,
+      height: 76,
+      borderRadius: 38,
+      backgroundColor: colors.accentMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 16,
+    },
+    emptyTitle: {
+      fontSize: 17,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    emptySubtitle: {
+      marginTop: 6,
+      fontSize: 14,
+      color: colors.textMuted,
+      textAlign: 'center',
+    },
+  });

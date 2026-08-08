@@ -1,8 +1,31 @@
-import DocumentPicker, { types, isCancel } from 'react-native-document-picker';
+import DocumentPicker, {types, isCancel} from 'react-native-document-picker';
 
 export interface ImportPickResult {
-  images: { uri: string; name: string }[];
-  pdfs: { uri: string; name: string }[];
+  images: {uri: string; name: string}[];
+  pdfs: {uri: string; name: string}[];
+}
+
+/** Opens the system picker restricted to images only (the capture screen's
+ * quick "Import" button — gallery photos, no PDFs). Returns [] if cancelled. */
+export async function pickGalleryImages(): Promise<
+  {uri: string; name: string}[]
+> {
+  try {
+    const results = await DocumentPicker.pick({
+      type: [types.images],
+      allowMultiSelection: true,
+      copyTo: 'cachesDirectory',
+    });
+    return results.map(result => ({
+      uri: result.fileCopyUri ?? result.uri,
+      name: result.name ?? 'image.jpg',
+    }));
+  } catch (error) {
+    if (isCancel(error)) {
+      return [];
+    }
+    throw error;
+  }
 }
 
 /** Opens the system file picker for images and PDFs together. Returns empty arrays if cancelled. */
@@ -14,19 +37,21 @@ export async function pickImportFiles(): Promise<ImportPickResult> {
       copyTo: 'cachesDirectory',
     });
 
-    const images: { uri: string; name: string }[] = [];
-    const pdfs: { uri: string; name: string }[] = [];
+    const images: {uri: string; name: string}[] = [];
+    const pdfs: {uri: string; name: string}[] = [];
     for (const result of results) {
       const uri = result.fileCopyUri ?? result.uri;
       if (result.type === types.pdf || /\.pdf$/i.test(result.name ?? '')) {
-        pdfs.push({ uri, name: result.name ?? 'document.pdf' });
+        pdfs.push({uri, name: result.name ?? 'document.pdf'});
       } else {
-        images.push({ uri, name: result.name ?? 'image.jpg' });
+        images.push({uri, name: result.name ?? 'image.jpg'});
       }
     }
-    return { images, pdfs };
+    return {images, pdfs};
   } catch (error) {
-    if (isCancel(error)) return { images: [], pdfs: [] };
+    if (isCancel(error)) {
+      return {images: [], pdfs: []};
+    }
     throw error;
   }
 }

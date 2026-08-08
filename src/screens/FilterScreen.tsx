@@ -1,21 +1,23 @@
 import React, {useMemo, useState} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Alert from '../utils/customAlert';
 import RNFS from 'react-native-fs';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
 import FilteredImage from '../components/FilteredImage';
+import ZoomableImage from '../components/ZoomableImage';
 import {FILTER_OPTIONS} from '../services/filters';
 import {bakeFilterToFile} from '../services/nativeImageFilter';
+import {rotateImageFile90} from '../services/pdfExport';
 import {FilterType} from '../types/models';
 import {
   appendSessionToDocument,
@@ -43,7 +45,7 @@ export default function FilterScreen({navigation, route}: Props) {
   const [selectedFilter, setSelectedFilter] = useState<FilterType>(
     page?.filter ?? 'original',
   );
-  const [busy, setBusy] = useState<'add' | 'done' | null>(null);
+  const [busy, setBusy] = useState<'add' | 'done' | 'rotate' | null>(null);
 
   if (!page) {
     return (
@@ -104,6 +106,29 @@ export default function FilterScreen({navigation, route}: Props) {
     } finally {
       setBusy(null);
     }
+  }
+
+  async function handleRotateLeft() {
+    try {
+      setBusy('rotate');
+      const rotatedUri = await rotateImageFile90(
+        page!.rawUri,
+        `rotate_${page!.id}_${generateId()}`,
+        270,
+      );
+      session.updatePage(page!.id, {rawUri: rotatedUri});
+    } catch (error) {
+      Alert.alert('Rotate failed', 'Could not rotate this page.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  function handleCrop() {
+    if (busy !== null) {
+      return;
+    }
+    navigation.navigate('Trim', {rawUri: page!.rawUri, pageId: page!.id});
   }
 
   async function handleJumpToPage(targetPageId: string) {
@@ -218,11 +243,13 @@ export default function FilterScreen({navigation, route}: Props) {
       )}
 
       <View style={styles.previewWrap}>
-        <FilteredImage
-          uri={page.rawUri}
-          filter={selectedFilter}
-          style={styles.previewImage}
-        />
+        <ZoomableImage style={styles.previewImage}>
+          <FilteredImage
+            uri={page.rawUri}
+            filter={selectedFilter}
+            style={StyleSheet.absoluteFill}
+          />
+        </ZoomableImage>
       </View>
 
       <ScrollView
@@ -281,6 +308,26 @@ export default function FilterScreen({navigation, route}: Props) {
                 <Text style={styles.iconButtonText}>Add Page</Text>
               </>
             )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.iconButton}
+            disabled={busy !== null}
+            onPress={handleRotateLeft}>
+            {busy === 'rotate' ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <>
+                <Icon name="rotate-left" size={22} color={colors.white} />
+                <Text style={styles.iconButtonText}>Left</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.iconButton}
+            disabled={busy !== null}
+            onPress={handleCrop}>
+            <Icon name="crop" size={22} color={colors.white} />
+            <Text style={styles.iconButtonText}>Crop</Text>
           </TouchableOpacity>
         </View>
         <TouchableOpacity

@@ -1,7 +1,6 @@
 import React, {useCallback, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   ScrollView,
@@ -10,10 +9,13 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Alert from '../utils/customAlert';
 import Share from 'react-native-share';
 import {captureRef} from 'react-native-view-shot';
 import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import {useFocusEffect} from '@react-navigation/native';
+import {NativeStackScreenProps} from '@react-navigation/native-stack';
+import {RootStackParamList} from '../navigation/types';
 import {listDocuments, listPages} from '../db/database';
 import {DocumentSummary, Page} from '../types/models';
 import Icon from '../components/Icon';
@@ -22,7 +24,9 @@ import {useTheme} from '../theme/ThemeContext';
 
 const MAX_PAGES = 6;
 
-export default function CollageScreen() {
+type Props = NativeStackScreenProps<RootStackParamList, 'Collage'>;
+
+export default function CollageScreen({route}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
@@ -33,8 +37,17 @@ export default function CollageScreen() {
   const collageRef = useRef<View>(null);
 
   const load = useCallback(async () => {
-    setDocuments(await listDocuments('all'));
-  }, []);
+    const docs = await listDocuments('all');
+    setDocuments(docs);
+    const wantedDocId = route.params?.docId;
+    if (wantedDocId && selectedDocId === null) {
+      const wanted = docs.find(d => d.id === wantedDocId);
+      if (wanted) {
+        await selectDocument(wanted);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.docId]);
 
   useFocusEffect(
     useCallback(() => {

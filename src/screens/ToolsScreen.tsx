@@ -1,13 +1,13 @@
 import React, {useMemo, useState} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import Alert from '../utils/customAlert';
 import {TabScreenProps} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
 import {pickImportFiles} from '../services/filePicker';
@@ -129,25 +129,27 @@ export default function ToolsScreen({navigation}: Props) {
       key: 'idcard',
       icon: 'badge',
       label: 'ID Card',
-      onPress: () => navigation.navigate('IdCardScan', {folderId: null}),
+      onPress: () =>
+        navigation.navigate('Scan', {folderId: null, mode: 'idcard'}),
     },
     {
       key: 'book',
       icon: 'menu-book',
       label: 'Book',
-      onPress: () => navigation.navigate('BookScan', {folderId: null}),
+      onPress: () =>
+        navigation.navigate('Scan', {folderId: null, mode: 'book'}),
     },
     {
       key: 'qrcode',
       icon: 'qr-code-scanner',
       label: 'QR Code',
-      onPress: () => navigation.navigate('QrScan'),
+      onPress: () => navigation.navigate('Scan', {mode: 'qrcode'}),
     },
     {
       key: 'totext',
       icon: 'text-fields',
       label: 'To Text',
-      onPress: () => navigation.navigate('QuickText'),
+      onPress: () => navigation.navigate('Scan', {mode: 'totext'}),
     },
   ];
 
