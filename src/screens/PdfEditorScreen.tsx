@@ -25,10 +25,11 @@ import {
   loadPdfForEditing,
 } from '../services/pdfEdit';
 import {renderAllPdfPages} from '../services/pdfThumbnail';
-import Icon from '../components/Icon';
+import Icon, {IconFamily} from '../components/Icon';
 import FeatureBadge from '../components/FeatureBadge';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
+import {documentFeatureIcons as f} from '../theme/featureIcons';
 
 interface EditorPage extends EditablePage {
   key: string;
@@ -44,7 +45,9 @@ export default function PdfEditorScreen({route}: Props) {
   const [fileName, setFileName] = useState<string | null>(null);
   const [pages, setPages] = useState<EditorPage[]>([]);
   const [loading, setLoading] = useState(false);
-  const [busy, setBusy] = useState<'save' | 'share' | null>(null);
+  const [busy, setBusy] = useState<'save' | 'share' | 'shareImage' | null>(
+    null,
+  );
   const [previewPage, setPreviewPage] = useState<EditorPage | null>(null);
   const sourceDocRef = useRef<PDFDocument | null>(null);
   const sourceUriRef = useRef<string | null>(null);
@@ -171,6 +174,10 @@ export default function PdfEditorScreen({route}: Props) {
 
   async function handleSave() {
     if (pages.length === 0) {
+      Alert.alert("Can't save", 'Add at least one page before saving.');
+      return;
+    }
+    if (busy !== null) {
       return;
     }
     try {
@@ -178,9 +185,10 @@ export default function PdfEditorScreen({route}: Props) {
       await buildOutput();
       Alert.alert(
         'PDF saved',
-        'The edited PDF was saved. Use Share to send it.',
+        'The edited PDF was saved. Use Share PDF to send it.',
       );
     } catch (error) {
+      console.error('PdfEditor: save failed', error);
       Alert.alert('Save failed', 'Could not save the edited PDF.');
     } finally {
       setBusy(null);
@@ -189,6 +197,10 @@ export default function PdfEditorScreen({route}: Props) {
 
   async function handleShare() {
     if (pages.length === 0) {
+      Alert.alert("Can't share", 'Add at least one page before sharing.');
+      return;
+    }
+    if (busy !== null) {
       return;
     }
     try {
@@ -200,7 +212,32 @@ export default function PdfEditorScreen({route}: Props) {
         failOnCancel: false,
       });
     } catch (error) {
+      console.error('PdfEditor: share pdf failed', error);
       Alert.alert('Share failed', 'Could not share the edited PDF.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleShareImages() {
+    if (pages.length === 0) {
+      Alert.alert("Can't share", 'Add at least one page before sharing.');
+      return;
+    }
+    if (busy !== null) {
+      return;
+    }
+    try {
+      setBusy('shareImage');
+      const outputPath = await buildOutput();
+      const rendered = await renderAllPdfPages(outputPath, 90);
+      await Share.open({
+        urls: rendered.map(r => r.uri),
+        failOnCancel: false,
+      });
+    } catch (error) {
+      console.error('PdfEditor: share images failed', error);
+      Alert.alert('Share failed', 'Could not share the pages as images.');
     } finally {
       setBusy(null);
     }
@@ -357,34 +394,33 @@ export default function PdfEditorScreen({route}: Props) {
       )}
 
       <View style={styles.actionBar}>
-        <TouchableOpacity
-          style={[styles.saveButton, styles.saveButtonSoft]}
+        <EditorActionButton
+          icon="save"
+          family="material"
+          color={colors.accent}
+          label="Save PDF"
+          loading={busy === 'save'}
           disabled={busy !== null || pages.length === 0}
-          onPress={handleSave}>
-          {busy === 'save' ? (
-            <ActivityIndicator color={colors.accent} />
-          ) : (
-            <>
-              <Icon name="save" size={18} color={colors.accent} />
-              <Text style={[styles.saveButtonText, {color: colors.accent}]}>
-                Save PDF
-              </Text>
-            </>
-          )}
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.saveButton}
+          onPress={handleSave}
+        />
+        <EditorActionButton
+          icon={f.sharePdf.icon}
+          family={f.sharePdf.family}
+          color={f.sharePdf.color}
+          label="Share PDF"
+          loading={busy === 'share'}
           disabled={busy !== null || pages.length === 0}
-          onPress={handleShare}>
-          {busy === 'share' ? (
-            <ActivityIndicator color={colors.white} />
-          ) : (
-            <>
-              <Icon name="share" size={18} color={colors.white} />
-              <Text style={styles.saveButtonText}>Share</Text>
-            </>
-          )}
-        </TouchableOpacity>
+          onPress={handleShare}
+        />
+        <EditorActionButton
+          icon={f.shareImage.icon}
+          family={f.shareImage.family}
+          color={f.shareImage.color}
+          label="Share Image"
+          loading={busy === 'shareImage'}
+          disabled={busy !== null || pages.length === 0}
+          onPress={handleShareImages}
+        />
       </View>
 
       <Modal
@@ -437,6 +473,74 @@ export default function PdfEditorScreen({route}: Props) {
     </View>
   );
 }
+
+interface EditorActionButtonProps {
+  icon: string;
+  family?: IconFamily;
+  color: string;
+  label: string;
+  onPress: () => void;
+  disabled?: boolean;
+  loading?: boolean;
+}
+
+function EditorActionButton({
+  icon,
+  family,
+  color,
+  label,
+  onPress,
+  disabled,
+  loading,
+}: EditorActionButtonProps) {
+  return (
+    <TouchableOpacity
+      style={[
+        editorActionStyles.btn,
+        {backgroundColor: `${color}14`},
+        disabled && editorActionStyles.btnDisabled,
+      ]}
+      onPress={onPress}
+      disabled={disabled}
+      activeOpacity={0.75}>
+      {loading ? (
+        <ActivityIndicator color={color} />
+      ) : (
+        <>
+          <FeatureBadge
+            icon={icon}
+            family={family}
+            color={color}
+            size={34}
+            variant="solid"
+          />
+          <Text style={[editorActionStyles.label, {color}]} numberOfLines={1}>
+            {label}
+          </Text>
+        </>
+      )}
+    </TouchableOpacity>
+  );
+}
+
+const editorActionStyles = StyleSheet.create({
+  btn: {
+    flex: 1,
+    height: 82,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  btnDisabled: {
+    opacity: 0.5,
+  },
+  label: {
+    fontWeight: '700',
+    fontSize: 11,
+    textAlign: 'center',
+  },
+});
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
@@ -608,23 +712,6 @@ const createStyles = (colors: AppColors) =>
       padding: 14,
       borderTopWidth: 1,
       borderTopColor: colors.border,
-    },
-    saveButton: {
-      flex: 1,
-      height: 48,
-      borderRadius: 10,
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      backgroundColor: colors.accent,
-    },
-    saveButtonSoft: {
-      backgroundColor: colors.accentMuted,
-    },
-    saveButtonText: {
-      color: colors.white,
-      fontWeight: '700',
     },
     previewBackdrop: {
       flex: 1,

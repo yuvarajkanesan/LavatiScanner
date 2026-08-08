@@ -1,15 +1,17 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import React, {useCallback, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   Image,
+  PixelRatio,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
 import Share from 'react-native-share';
+import {captureRef} from 'react-native-view-shot';
 import {CameraRoll} from '@react-native-camera-roll/camera-roll';
 import {useFocusEffect} from '@react-navigation/native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
@@ -20,11 +22,12 @@ import {
   listPages,
   renameDocument,
   reorderPages,
+  setPageFilePath,
   setPageName,
   setPageNote,
   setPageOcrText,
 } from '../db/database';
-import {deletePageFile} from '../services/fileStorage';
+import {deletePageFile, persistPageImage} from '../services/fileStorage';
 import {buildPdfFromImages} from '../services/pdfExport';
 import {recognizeTextFromImage} from '../services/ocr';
 import {Document, Page} from '../types/models';
@@ -70,6 +73,13 @@ const PAGE_ACTIONS: SheetOption[] = [
     icon: f.note.icon,
     family: f.note.family,
     color: f.note.color,
+  },
+  {
+    key: 'rotate',
+    label: 'Rotate Page',
+    icon: f.rotate.icon,
+    family: f.rotate.family,
+    color: f.rotate.color,
   },
   {
     key: 'saveGallery',
@@ -118,6 +128,13 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
   const [ocrText, setOcrText] = useState('');
   const [activePage, setActivePage] = useState<Page | null>(null);
   const [notePage, setNotePage] = useState<Page | null>(null);
+  const [rotatingPageId, setRotatingPageId] = useState<string | null>(null);
+  const [rotateCapture, setRotateCapture] = useState<{
+    page: Page;
+    width: number;
+    height: number;
+  } | null>(null);
+  const rotateCaptureRef = useRef<View>(null);
 
   const load = useCallback(async () => {
     const [d, p] = await Promise.all([getDocument(docId), listPages(docId)]);
@@ -170,6 +187,61 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
       docId,
       reordered.map(p => p.id),
     );
+  }
+
+  function handleRotatePage(page: Page) {
+    setRotatingPageId(page.id);
+    Image.getSize(
+      `file://${page.filePath}`,
+      (width, height) => setRotateCapture({page, width, height}),
+      () => {
+        setRotatingPageId(null);
+        Alert.alert('Rotate failed', 'Could not read this page image.');
+      },
+    );
+  }
+
+  // Bakes a 90° clockwise rotation into the page's actual JPG bytes (rather
+  // than storing rotation as metadata) so the thumbnail, PDF export, and
+  // "Share Image" all stay correct with no extra handling anywhere else.
+  const finishRotateCapture = useCallback(async () => {
+    if (!rotateCapture) {
+      return;
+    }
+    const {page} = rotateCapture;
+    try {
+      const tempPath = await captureRef(rotateCaptureRef, {
+        format: 'jpg',
+        quality: 0.92,
+      });
+      const newPath = await persistPageImage(docId, tempPath);
+      await deletePageFile(page.filePath);
+      await setPageFilePath(page.id, newPath);
+      await load();
+    } catch (error) {
+      Alert.alert('Rotate failed', 'Could not rotate this page.');
+    } finally {
+      setRotateCapture(null);
+      setRotatingPageId(null);
+    }
+  }, [rotateCapture, docId, load]);
+
+  // Driven by the hidden Image's onLoad rather than a fixed delay, since a
+  // guessed timeout could fire before a large scanned photo has actually
+  // decoded and painted, capturing a blank frame. The double rAF gives the
+  // native side one extra frame to composite the just-loaded bitmap.
+  function handleRotateImageLoaded() {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        finishRotateCapture();
+      });
+    });
+  }
+
+  function handleRotateImageError() {
+    setRotateCapture(null);
+    setRotatingPageId(null);
+    Alert.alert('Rotate failed', 'Could not rotate this page.');
   }
 
   async function handleRunOcr(page: Page) {
@@ -246,6 +318,9 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
         break;
       case 'note':
         setNotePage(page);
+        break;
+      case 'rotate':
+        handleRotatePage(page);
         break;
       case 'saveGallery':
         handleSaveToGallery(page);
@@ -463,17 +538,23 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
                   />
                 </View>
               ) : null}
-              <TouchableOpacity
-                style={styles.pageMenuBtn}
-                onPress={() => setActivePage(item)}
-                hitSlop={8}>
-                <Icon
-                  name="dots-vertical"
-                  family="community"
-                  size={20}
-                  color={colors.white}
-                />
-              </TouchableOpacity>
+              {rotatingPageId === item.id ? (
+                <View style={styles.rotatingOverlay}>
+                  <ActivityIndicator color={colors.white} />
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={styles.pageMenuBtn}
+                  onPress={() => setActivePage(item)}
+                  hitSlop={8}>
+                  <Icon
+                    name="dots-vertical"
+                    family="community"
+                    size={20}
+                    color={colors.white}
+                  />
+                </TouchableOpacity>
+              )}
             </View>
           )}
         />
@@ -553,6 +634,32 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
         onSave={handleSaveNote}
         onClose={() => setNotePage(null)}
       />
+
+      {rotateCapture && (
+        <View style={styles.rotateCaptureHost} pointerEvents="none">
+          <View
+            ref={rotateCaptureRef}
+            collapsable={false}
+            style={{
+              width: rotateCapture.height / PixelRatio.get(),
+              height: rotateCapture.width / PixelRatio.get(),
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+            <Image
+              source={{uri: `file://${rotateCapture.page.filePath}`}}
+              style={{
+                width: rotateCapture.width / PixelRatio.get(),
+                height: rotateCapture.height / PixelRatio.get(),
+                transform: [{rotate: '90deg'}],
+              }}
+              resizeMode="contain"
+              onLoad={handleRotateImageLoaded}
+              onError={handleRotateImageError}
+            />
+          </View>
+        </View>
+      )}
     </View>
   );
 }
@@ -783,6 +890,23 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: f.note.color,
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    rotatingOverlay: {
+      position: 'absolute',
+      right: 10,
+      top: 10,
+      width: 32,
+      height: 32,
+      borderRadius: 16,
+      backgroundColor: 'rgba(0,0,0,0.55)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    rotateCaptureHost: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      opacity: 0,
     },
     actionBar: {
       padding: 12,

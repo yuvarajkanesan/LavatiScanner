@@ -23,7 +23,8 @@ export const documentFeatureIcons: Record<
   | 'saveGallery'
   | 'note'
   | 'pageName'
-  | 'editPdf',
+  | 'editPdf'
+  | 'rotate',
   FeatureToken
 > = {
   exportPdf: {icon: 'tray-arrow-down', family: 'community', color: '#3B82F6'},
@@ -56,4 +57,5 @@ export const documentFeatureIcons: Record<
     family: 'community',
     color: '#6366F1',
   },
+  rotate: {icon: 'rotate-right', family: 'community', color: '#0891B2'},
 };
