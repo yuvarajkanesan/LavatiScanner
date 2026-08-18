@@ -3,7 +3,8 @@
     "allow": [
       "Bash(npx tsc *)",
       "Bash(adb kill-server *)",
-      "Bash(adb start-server *)"
+      "Bash(adb start-server *)",
+      "PowerShell(adb devices)"
     ]
   }
 }

@@ -1,12 +1,17 @@
 import React, {useMemo, useState} from 'react';
 import {
   ActivityIndicator,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TouchableOpacity,
   View,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import Alert from '../utils/customAlert';
 import {TabScreenProps} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
@@ -15,9 +20,12 @@ import {isPdfRenderable} from '../services/pdfEdit';
 import {renderAllPdfPages} from '../services/pdfThumbnail';
 import {saveSessionAsDocument} from '../services/scanPipeline';
 import {scanTimestampName} from '../utils/format';
-import Icon from '../components/Icon';
+import FeatureBadge from '../components/FeatureBadge';
+import ScreenBackground from '../components/ScreenBackground';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
+import {toolIcons} from '../theme/toolIcons';
+import {PercentWidth, percentWidth, useResponsive} from '../utils/responsive';
 
 function stripExtension(name: string): string {
   return name.replace(/\.[^./\\]+$/, '');
@@ -211,14 +219,16 @@ export default function ToolsScreen({navigation}: Props) {
   ];
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Section title="Scan">
-        <Grid shortcuts={scanShortcuts} />
-      </Section>
-      <Section title="Process Files">
-        <Grid shortcuts={fileShortcuts} busyKey={importing ? 'import' : null} />
-      </Section>
-    </ScrollView>
+    <ScreenBackground>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Section title="Scan">
+          <Grid shortcuts={scanShortcuts} />
+        </Section>
+        <Section title="Process Files">
+          <Grid shortcuts={fileShortcuts} busyKey={importing ? 'import' : null} />
+        </Section>
+      </ScrollView>
+    </ScreenBackground>
   );
 }
 
@@ -248,34 +258,71 @@ function Grid({
 }) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const {toolColumns} = useResponsive();
+  const cardWidthPercent = percentWidth(100 / toolColumns - 3);
   return (
     <View style={styles.grid}>
       {shortcuts.map(s => (
-        <TouchableOpacity
+        <ToolCard
           key={s.key}
-          style={styles.card}
-          onPress={s.onPress}
-          activeOpacity={0.7}>
-          <View style={styles.cardIconWrap}>
-            {busyKey === s.key ? (
-              <ActivityIndicator color={colors.accent} />
-            ) : (
-              <Icon name={s.icon} size={26} color={colors.accent} />
-            )}
-          </View>
-          <Text style={styles.cardLabel}>{s.label}</Text>
-        </TouchableOpacity>
+          shortcut={s}
+          busy={busyKey === s.key}
+          styles={styles}
+          widthPercent={cardWidthPercent}
+        />
       ))}
     </View>
   );
 }
 
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+
+function ToolCard({
+  shortcut,
+  busy,
+  styles,
+  widthPercent,
+}: {
+  shortcut: Shortcut;
+  busy: boolean;
+  styles: ReturnType<typeof createStyles>;
+  widthPercent: PercentWidth;
+}) {
+  const {colors} = useTheme();
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({transform: [{scale: scale.value}]}));
+  const token = toolIcons[shortcut.key as keyof typeof toolIcons];
+
+  return (
+    <AnimatedPressable
+      style={[styles.card, {width: widthPercent}, animatedStyle]}
+      onPress={shortcut.onPress}
+      onPressIn={() => {
+        scale.value = withSpring(0.95, {damping: 15, stiffness: 400});
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, {damping: 15, stiffness: 400});
+      }}>
+      {busy ? (
+        <View style={styles.cardIconWrap}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      ) : (
+        <FeatureBadge
+          icon={token?.icon ?? shortcut.icon}
+          family={token?.family}
+          color={token?.color ?? colors.accent}
+          size={44}
+          variant="soft"
+        />
+      )}
+      <Text style={styles.cardLabel}>{shortcut.label}</Text>
+    </AnimatedPressable>
+  );
+}
+
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
     content: {
       padding: 16,
       paddingBottom: 32,
@@ -299,11 +346,16 @@ const createStyles = (colors: AppColors) =>
     card: {
       width: '30%',
       alignItems: 'center',
-      paddingVertical: 14,
-      borderRadius: 12,
+      paddingVertical: 16,
+      borderRadius: 16,
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
+      elevation: 3,
+      shadowColor: colors.black,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.1,
+      shadowRadius: 5,
     },
     cardIconWrap: {
       width: 44,

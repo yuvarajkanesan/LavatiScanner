@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import Alert from '../utils/customAlert';
 import DraggableFlatList, {
   RenderItemParams,
@@ -18,6 +19,7 @@ import {PDFDocument} from 'pdf-lib';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
 import {pickPdfFile} from '../services/documentPicker';
+import {pickImportFiles} from '../services/filePicker';
 import {
   buildEditedPdf,
   EditablePage,
@@ -25,8 +27,13 @@ import {
   loadPdfForEditing,
 } from '../services/pdfEdit';
 import {renderAllPdfPages} from '../services/pdfThumbnail';
+import {saveSessionAsDocument} from '../services/scanPipeline';
+import {readFileBytes} from '../services/pdfBytes';
+import {promptForText} from '../utils/promptForText';
 import Icon, {IconFamily} from '../components/Icon';
 import FeatureBadge from '../components/FeatureBadge';
+import Button from '../components/Button';
+import ScreenBackground from '../components/ScreenBackground';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
 import {documentFeatureIcons as f} from '../theme/featureIcons';
@@ -39,18 +46,46 @@ interface EditorPage extends EditablePage {
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PdfEditor'>;
 
-export default function PdfEditorScreen({route}: Props) {
+export default function PdfEditorScreen({route, navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [fileName, setFileName] = useState<string | null>(null);
   const [pages, setPages] = useState<EditorPage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [addingPages, setAddingPages] = useState(false);
   const [busy, setBusy] = useState<'save' | 'share' | 'shareImage' | null>(
     null,
   );
   const [previewPage, setPreviewPage] = useState<EditorPage | null>(null);
+  const [dirty, setDirty] = useState(false);
   const sourceDocRef = useRef<PDFDocument | null>(null);
   const sourceUriRef = useRef<string | null>(null);
+
+  // Warn before losing edits that were never saved to the library or shared
+  // out — mirrors React Navigation's documented "prevent leaving with
+  // unsaved changes" pattern (intercept beforeRemove, replay the original
+  // action via navigation.dispatch if the user confirms discarding).
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', e => {
+      if (!dirty) {
+        return;
+      }
+      e.preventDefault();
+      Alert.alert(
+        'Discard changes?',
+        'You have unsaved edits to this PDF. Leaving now will lose them unless you save or share first.',
+        [
+          {text: 'Keep Editing', style: 'cancel'},
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+        ],
+      );
+    });
+    return unsubscribe;
+  }, [navigation, dirty]);
 
   async function loadPdf(uri: string, name: string) {
     try {
@@ -59,6 +94,7 @@ export default function PdfEditorScreen({route}: Props) {
       sourceDocRef.current = doc;
       sourceUriRef.current = uri;
       setFileName(name);
+      setDirty(false);
       setPages(
         Array.from({length: doc.getPageCount()}, (_, i) => ({
           key: `p${i}`,
@@ -128,6 +164,87 @@ export default function PdfEditorScreen({route}: Props) {
     );
   }
 
+  async function handleAddPages() {
+    if (addingPages) {
+      return;
+    }
+    const doc = sourceDocRef.current;
+    if (!doc) {
+      return;
+    }
+    try {
+      setAddingPages(true);
+      const {images, pdfs} = await pickImportFiles();
+      if (images.length === 0 && pdfs.length === 0) {
+        return;
+      }
+
+      const newPages: EditorPage[] = [];
+      const skipped: string[] = [];
+
+      for (const image of images) {
+        const jpgBytes = await readFileBytes(image.uri);
+        const jpgImage = await doc.embedJpg(jpgBytes);
+        const {width, height} = jpgImage.size();
+        const page = doc.addPage([width, height]);
+        page.drawImage(jpgImage, {x: 0, y: 0, width, height});
+        const originalIndex = doc.getPageCount() - 1;
+        newPages.push({
+          key: `p${originalIndex}`,
+          originalIndex,
+          rotation: 0,
+          thumbUri: image.uri,
+        });
+      }
+
+      for (const pdf of pdfs) {
+        // Same encrypted-PDF guard as loadPdf/ToolsScreen's import — the
+        // native renderer used for thumbnails throws on any encrypted file.
+        if (!(await isPdfRenderable(pdf.uri))) {
+          skipped.push(pdf.name);
+          continue;
+        }
+        const srcDoc = await loadPdfForEditing(pdf.uri);
+        const copied = await doc.copyPages(srcDoc, srcDoc.getPageIndices());
+        let thumbs: {uri: string}[] = [];
+        try {
+          thumbs = await renderAllPdfPages(pdf.uri);
+        } catch {
+          thumbs = [];
+        }
+        copied.forEach((copiedPage, i) => {
+          doc.addPage(copiedPage);
+          const originalIndex = doc.getPageCount() - 1;
+          newPages.push({
+            key: `p${originalIndex}`,
+            originalIndex,
+            rotation: 0,
+            thumbUri: thumbs[i]?.uri,
+            thumbUnavailable: !thumbs[i],
+          });
+        });
+      }
+
+      if (newPages.length > 0) {
+        setPages(prev => [...prev, ...newPages]);
+        setDirty(true);
+      }
+      if (skipped.length > 0) {
+        Alert.alert(
+          'Some files skipped',
+          `Could not open: ${skipped.join(', ')}. The file may be password-protected.`,
+        );
+      }
+    } catch (error) {
+      Alert.alert(
+        'Could not add pages',
+        'One of the selected files may be corrupted.',
+      );
+    } finally {
+      setAddingPages(false);
+    }
+  }
+
   function handleRotate(key: string) {
     setPages(prev =>
       prev.map(p =>
@@ -139,6 +256,7 @@ export default function PdfEditorScreen({route}: Props) {
           : p,
       ),
     );
+    setDirty(true);
   }
 
   function handleDelete(key: string, pageNumber: number) {
@@ -157,6 +275,7 @@ export default function PdfEditorScreen({route}: Props) {
           onPress: () => {
             setPages(prev => prev.filter(p => p.key !== key));
             setPreviewPage(prev => (prev?.key === key ? null : prev));
+            setDirty(true);
           },
         },
       ],
@@ -172,7 +291,7 @@ export default function PdfEditorScreen({route}: Props) {
     return buildEditedPdf(sourceDocRef.current, pages, outputName);
   }
 
-  async function handleSave() {
+  async function handleSaveToDocuments() {
     if (pages.length === 0) {
       Alert.alert("Can't save", 'Add at least one page before saving.');
       return;
@@ -180,15 +299,28 @@ export default function PdfEditorScreen({route}: Props) {
     if (busy !== null) {
       return;
     }
+    const defaultName = (fileName ?? 'document').replace(/\.pdf$/i, '');
+    const docName = await promptForText('Save as', defaultName);
+    if (docName === null) {
+      return;
+    }
     try {
       setBusy('save');
-      await buildOutput();
-      Alert.alert(
-        'PDF saved',
-        'The edited PDF was saved. Use Share PDF to send it.',
-      );
+      const outputPath = await buildOutput();
+      const rendered = await renderAllPdfPages(outputPath);
+      const docId = await saveSessionAsDocument({
+        docName: docName.trim() || defaultName,
+        folderId: null,
+        pages: rendered.map((r, i) => ({
+          id: `p${i}`,
+          rawUri: r.uri,
+          filter: 'original',
+        })),
+      });
+      setDirty(false);
+      navigation.replace('DocumentDetail', {docId});
     } catch (error) {
-      console.error('PdfEditor: save failed', error);
+      console.error('PdfEditor: save to documents failed', error);
       Alert.alert('Save failed', 'Could not save the edited PDF.');
     } finally {
       setBusy(null);
@@ -211,6 +343,7 @@ export default function PdfEditorScreen({route}: Props) {
         type: 'application/pdf',
         failOnCancel: false,
       });
+      setDirty(false);
     } catch (error) {
       console.error('PdfEditor: share pdf failed', error);
       Alert.alert('Share failed', 'Could not share the edited PDF.');
@@ -235,6 +368,7 @@ export default function PdfEditorScreen({route}: Props) {
         urls: rendered.map(r => r.uri),
         failOnCancel: false,
       });
+      setDirty(false);
     } catch (error) {
       console.error('PdfEditor: share images failed', error);
       Alert.alert('Share failed', 'Could not share the pages as images.');
@@ -245,40 +379,48 @@ export default function PdfEditorScreen({route}: Props) {
 
   if (!fileName) {
     return (
-      <View style={styles.center}>
+      <ScreenBackground style={styles.center}>
         <View style={styles.iconWrap}>
-          <Icon name="edit-document" size={40} color={colors.accent} />
+          <FeatureBadge
+            icon="edit-document"
+            family="material"
+            color={colors.accent}
+            size={64}
+            variant="glow"
+          />
         </View>
         <Text style={styles.title}>PDF Editor</Text>
         <Text style={styles.description}>
           Delete, rotate, and reorder pages of any PDF, then save or share the
           result.
         </Text>
-        <TouchableOpacity
-          style={styles.button}
-          onPress={handlePick}
-          disabled={loading}>
-          {loading ? (
-            <ActivityIndicator color={colors.white} />
-          ) : (
-            <>
-              <Icon name="file-open" size={18} color={colors.white} />
-              <Text style={styles.buttonText}>Choose PDF</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
+        <View style={styles.ctaWrap}>
+          <Button
+            label="Choose PDF"
+            icon="file-open"
+            iconFamily="material"
+            onPress={handlePick}
+            loading={loading}
+            variant="gradient"
+            size="lg"
+          />
+        </View>
+      </ScreenBackground>
     );
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.hero}>
+    <ScreenBackground>
+      <LinearGradient
+        colors={colors.gradientHero}
+        start={{x: 0, y: 0}}
+        end={{x: 1, y: 1}}
+        style={styles.hero}>
         <FeatureBadge
           icon="file-document-edit-outline"
           color={colors.accent}
           size={44}
-          variant="solid"
+          variant="glow"
         />
         <View style={styles.heroText}>
           <Text style={styles.fileNameHeader} numberOfLines={1}>
@@ -290,18 +432,32 @@ export default function PdfEditorScreen({route}: Props) {
           </Text>
         </View>
         <TouchableOpacity
+          style={styles.addPagesBtn}
+          onPress={handleAddPages}
+          disabled={addingPages}
+          hitSlop={8}>
+          {addingPages ? (
+            <ActivityIndicator size="small" color={colors.white} />
+          ) : (
+            <Icon name="file-plus-outline" family="community" size={18} color={colors.white} />
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
           style={styles.resetBtn}
           onPress={handleReset}
           hitSlop={8}>
           <Icon name="restore" size={20} color={colors.textMuted} />
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       <DraggableFlatList
         data={pages}
         keyExtractor={item => item.key}
         contentContainerStyle={styles.list}
-        onDragEnd={({data}) => setPages(data)}
+        onDragEnd={({data}) => {
+          setPages(data);
+          setDirty(true);
+        }}
         renderItem={({
           item,
           drag,
@@ -395,13 +551,13 @@ export default function PdfEditorScreen({route}: Props) {
 
       <View style={styles.actionBar}>
         <EditorActionButton
-          icon="save"
-          family="material"
+          icon="content-save-move-outline"
+          family="community"
           color={colors.accent}
-          label="Save PDF"
+          label="Save to Documents"
           loading={busy === 'save'}
           disabled={busy !== null || pages.length === 0}
-          onPress={handleSave}
+          onPress={handleSaveToDocuments}
         />
         <EditorActionButton
           icon={f.sharePdf.icon}
@@ -470,7 +626,7 @@ export default function PdfEditorScreen({route}: Props) {
           )}
         </View>
       </Modal>
-    </View>
+    </ScreenBackground>
   );
 }
 
@@ -544,24 +700,13 @@ const editorActionStyles = StyleSheet.create({
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
     center: {
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
       padding: 28,
-      backgroundColor: colors.background,
     },
     iconWrap: {
-      width: 76,
-      height: 76,
-      borderRadius: 38,
-      backgroundColor: colors.accentMuted,
-      alignItems: 'center',
-      justifyContent: 'center',
       marginBottom: 20,
     },
     title: {
@@ -576,21 +721,8 @@ const createStyles = (colors: AppColors) =>
       textAlign: 'center',
       lineHeight: 19,
     },
-    button: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
+    ctaWrap: {
       marginTop: 28,
-      height: 50,
-      paddingHorizontal: 28,
-      borderRadius: 12,
-      backgroundColor: colors.accent,
-    },
-    buttonText: {
-      color: colors.white,
-      fontWeight: '700',
-      fontSize: 15,
     },
     hero: {
       flexDirection: 'row',
@@ -622,6 +754,15 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       justifyContent: 'center',
       backgroundColor: colors.surface,
+    },
+    addPagesBtn: {
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
+      marginRight: 8,
     },
     list: {
       padding: 16,

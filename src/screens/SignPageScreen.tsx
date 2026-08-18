@@ -41,29 +41,68 @@ export default function SignPageScreen({navigation, route}: Props) {
   const startPos = useRef({x: 0, y: 0});
 
   // `panResponder` below is created exactly once via useRef, so its
-  // callbacks close over whatever `pos` was on that first render ({0,0})
-  // forever — reading state directly inside them goes stale. This ref is
-  // kept in sync on every position update instead, so the drag handler
-  // always starts from the signature's real current position rather than
-  // snapping back toward the top-left on every gesture.
+  // callbacks close over whatever `pos`/`sigWidth` was on that first render
+  // forever — reading state directly inside them goes stale. These refs are
+  // kept in sync on every update instead, so the drag/pinch handlers always
+  // start from the signature's real current position/size rather than
+  // snapping back on every gesture.
   const posRef = useRef({x: 0, y: 0});
+  const sigWidthRef = useRef(SIG_DEFAULT);
+  const pinchStartDistance = useRef<number | null>(null);
+  const pinchStartWidth = useRef(SIG_DEFAULT);
 
   function updatePos(next: {x: number; y: number}) {
     posRef.current = next;
     setPos(next);
   }
 
+  function updateSigWidth(next: number) {
+    const clamped = Math.max(SIG_MIN, Math.min(SIG_MAX, next));
+    sigWidthRef.current = clamped;
+    setSigWidth(clamped);
+  }
+
+  function touchDistance(touches: {pageX: number; pageY: number}[]) {
+    const [a, b] = touches;
+    return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
+  }
+
+  // Single finger drags the signature; a second finger switches to
+  // pinch-to-resize (mirrors the touch-distance approach in
+  // ZoomableImage.tsx, used app-wide instead of a gesture library).
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
-      onPanResponderGrant: () => {
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: evt => {
+        const touches = evt.nativeEvent.touches;
+        pinchStartDistance.current =
+          touches.length === 2 ? touchDistance(touches) : null;
+        pinchStartWidth.current = sigWidthRef.current;
         startPos.current = posRef.current;
       },
-      onPanResponderMove: (_evt, gesture) => {
-        updatePos({
-          x: startPos.current.x + gesture.dx,
-          y: startPos.current.y + gesture.dy,
-        });
+      onPanResponderMove: (evt, gesture) => {
+        const touches = evt.nativeEvent.touches;
+        if (touches.length === 2) {
+          if (pinchStartDistance.current === null) {
+            pinchStartDistance.current = touchDistance(touches);
+            pinchStartWidth.current = sigWidthRef.current;
+            return;
+          }
+          const dist = touchDistance(touches);
+          updateSigWidth(
+            pinchStartWidth.current * (dist / pinchStartDistance.current),
+          );
+        } else if (touches.length === 1) {
+          pinchStartDistance.current = null;
+          updatePos({
+            x: startPos.current.x + gesture.dx,
+            y: startPos.current.y + gesture.dy,
+          });
+        }
+      },
+      onPanResponderRelease: () => {
+        pinchStartDistance.current = null;
       },
     }),
   ).current;
@@ -78,7 +117,7 @@ export default function SignPageScreen({navigation, route}: Props) {
   }
 
   function resize(delta: number) {
-    setSigWidth(w => Math.max(SIG_MIN, Math.min(SIG_MAX, w + delta)));
+    updateSigWidth(sigWidthRef.current + delta);
   }
 
   async function handleApply() {
@@ -164,7 +203,7 @@ export default function SignPageScreen({navigation, route}: Props) {
           <Icon name="remove" size={20} color={colors.white} />
         </TouchableOpacity>
         <Text style={styles.controlsHint}>
-          Drag to position · pinch size with buttons
+          Drag to move · pinch or use buttons to resize
         </Text>
         <TouchableOpacity style={styles.sizeBtn} onPress={() => resize(20)}>
           <Icon name="add" size={20} color={colors.white} />

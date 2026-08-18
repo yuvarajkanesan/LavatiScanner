@@ -5,6 +5,7 @@ import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { DocumentSummary } from '../types/models';
 import { formatDate } from '../utils/format';
+import { PercentWidth } from '../utils/responsive';
 
 interface Props {
   document: DocumentSummary;
@@ -12,6 +13,9 @@ interface Props {
   onLongPress?: () => void;
   selectionMode?: boolean;
   selected?: boolean;
+  /** Overrides the card's default 2-column (47%) width — pass a computed
+   * percentage to match a different grid column count (e.g. on tablets). */
+  widthPercent?: PercentWidth;
 }
 
 export default function DocumentCard({
@@ -20,12 +24,13 @@ export default function DocumentCard({
   onLongPress,
   selectionMode,
   selected,
+  widthPercent,
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, widthPercent ? { width: widthPercent } : null]}
       onPress={onPress}
       onLongPress={onLongPress}
       activeOpacity={0.7}>
@@ -63,16 +68,16 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
   },
   thumbnailWrap: {
     aspectRatio: 0.75,
-    borderRadius: 10,
+    borderRadius: 14,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
     overflow: 'hidden',
-    elevation: 1,
+    elevation: 3,
     shadowColor: colors.black,
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
   },
   thumbnailWrapSelected: {
     borderColor: colors.accent,

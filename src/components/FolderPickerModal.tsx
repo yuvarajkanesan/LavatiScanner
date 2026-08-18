@@ -7,12 +7,14 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import { createFolder, listFolders } from '../db/database';
 import { Folder } from '../types/models';
 import { promptForText } from '../utils/promptForText';
 import Icon from './Icon';
 import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
+import { useResponsive } from '../utils/responsive';
 
 interface Props {
   visible: boolean;
@@ -24,6 +26,7 @@ interface Props {
 export default function FolderPickerModal({ visible, currentFolderId = null, onClose, onPick }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const { contentMaxWidth } = useResponsive();
   const [folders, setFolders] = useState<Folder[]>([]);
 
   const load = useCallback(async () => {
@@ -45,7 +48,7 @@ export default function FolderPickerModal({ visible, currentFolderId = null, onC
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
-        <View style={styles.sheet}>
+        <View style={[styles.sheet, {maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center'}]}>
           <View style={styles.dragHandle} />
           <View style={styles.header}>
             <Text style={styles.title}>Move to Folder</Text>
@@ -89,9 +92,15 @@ export default function FolderPickerModal({ visible, currentFolderId = null, onC
             )}
           />
 
-          <TouchableOpacity style={styles.newFolderRow} onPress={handleCreateFolder}>
-            <Icon name="create-new-folder" size={20} color={colors.white} />
-            <Text style={styles.newFolderText}>New Folder</Text>
+          <TouchableOpacity style={styles.newFolderWrap} onPress={handleCreateFolder} activeOpacity={0.85}>
+            <LinearGradient
+              colors={colors.gradientPrimary}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.newFolderRow}>
+              <Icon name="create-new-folder" size={20} color={colors.white} />
+              <Text style={styles.newFolderText}>New Folder</Text>
+            </LinearGradient>
           </TouchableOpacity>
         </View>
       </View>
@@ -181,16 +190,24 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     color: colors.text,
     fontWeight: '500',
   },
+  newFolderWrap: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    borderRadius: 14,
+    overflow: 'hidden',
+    elevation: 3,
+    shadowColor: colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
   newFolderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
-    marginHorizontal: 16,
-    marginTop: 12,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: colors.accent,
+    height: 50,
+    borderRadius: 14,
   },
   newFolderText: {
     fontSize: 15,

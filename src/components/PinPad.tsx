@@ -111,6 +111,7 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
   },
   card: {
     width: '86%',
+    maxWidth: 400,
     backgroundColor: colors.surface,
     borderRadius: 24,
     padding: 24,

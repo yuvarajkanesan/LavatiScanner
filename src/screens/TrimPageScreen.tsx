@@ -1,12 +1,12 @@
 import React, {useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   Image,
   PanResponder,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Svg, {Polygon} from 'react-native-svg';
@@ -29,12 +29,12 @@ interface Point {
 type CornerKey = 'tl' | 'tr' | 'br' | 'bl';
 type Corners = Record<CornerKey, Point>;
 
-const SCREEN = Dimensions.get('window');
 const INSET_RATIO = 0.04;
 
 export default function TrimPageScreen({navigation, route}: Props) {
   const session = useScanSession();
   const {rawUri, pageId: editingPageId} = route.params;
+  const {width: screenWidth, height: screenHeight} = useWindowDimensions();
 
   const [imageSize, setImageSize] = useState<{
     width: number;
@@ -67,8 +67,8 @@ export default function TrimPageScreen({navigation, route}: Props) {
     Image.getSize(
       `file://${rawUri.replace('file://', '')}`,
       (width, height) => {
-        const maxW = SCREEN.width - 32;
-        const maxH = SCREEN.height - 320;
+        const maxW = screenWidth - 32;
+        const maxH = screenHeight - 320;
         const scale = Math.min(maxW / width, maxH / height);
         const dw = width * scale;
         const dh = height * scale;
@@ -89,7 +89,7 @@ export default function TrimPageScreen({navigation, route}: Props) {
       },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rawUri]);
+  }, [rawUri, screenWidth, screenHeight]);
 
   function clamp(value: number, min: number, max: number) {
     return Math.max(min, Math.min(max, value));

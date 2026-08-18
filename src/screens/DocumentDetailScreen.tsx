@@ -1,4 +1,5 @@
 import React, {useCallback, useMemo, useState} from 'react';
+import LinearGradient from 'react-native-linear-gradient';
 import {
   ActivityIndicator,
   FlatList,
@@ -51,6 +52,9 @@ import {promptForText} from '../utils/promptForText';
 import {formatDate} from '../utils/format';
 import Icon, {IconFamily} from '../components/Icon';
 import FeatureBadge from '../components/FeatureBadge';
+import Button from '../components/Button';
+import ScreenBackground from '../components/ScreenBackground';
+import {percentWidth, useResponsive} from '../utils/responsive';
 import FolderPickerModal from '../components/FolderPickerModal';
 import OcrModal from '../components/OcrModal';
 import PageNoteModal from '../components/PageNoteModal';
@@ -142,6 +146,13 @@ const MORE_ACTIONS: SheetOption[] = [
     color: f.shareJpg.color,
   },
   {
+    key: 'editPdf',
+    label: 'Edit as PDF',
+    icon: f.editPdf.icon,
+    family: f.editPdf.family,
+    color: f.editPdf.color,
+  },
+  {
     key: 'email',
     label: 'Email to Myself',
     icon: f.emailMyself.icon,
@@ -228,6 +239,8 @@ type PageGridItem = {type: 'page'; page: Page} | {type: 'add'};
 export default function DocumentDetailScreen({navigation, route}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const {gridColumns} = useResponsive();
+  const pageCardWidthPercent = percentWidth(100 / gridColumns - 3);
   const {docId} = route.params;
   const session = useScanSession();
 
@@ -244,7 +257,14 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
   const [moreVisible, setMoreVisible] = useState(false);
   const [folderPickerVisible, setFolderPickerVisible] = useState(false);
   const [moreBusy, setMoreBusy] = useState<
-    'sharePdf' | 'shareImage' | 'email' | 'duplicate' | 'move' | 'delete' | null
+    | 'sharePdf'
+    | 'shareImage'
+    | 'editPdf'
+    | 'email'
+    | 'duplicate'
+    | 'move'
+    | 'delete'
+    | null
   >(null);
   const [previewMoreVisible, setPreviewMoreVisible] = useState(false);
   const [previewBusy, setPreviewBusy] = useState<
@@ -654,6 +674,27 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     }
   }
 
+  async function handleEditAsPdf() {
+    if (pages.length === 0 || !doc) {
+      return;
+    }
+    try {
+      setMoreBusy('editPdf');
+      const pdfPath = await buildPdfFromImages(
+        pages.map(p => p.filePath),
+        doc.name,
+      );
+      navigation.navigate('PdfEditor', {uri: pdfPath, name: doc.name});
+    } catch (error) {
+      Alert.alert(
+        'Could not open editor',
+        'Could not prepare this document as a PDF for editing.',
+      );
+    } finally {
+      setMoreBusy(null);
+    }
+  }
+
   async function handleShareDocumentImages() {
     if (pages.length === 0) {
       return;
@@ -768,6 +809,9 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
       case 'shareImage':
         handleShareDocumentImages();
         break;
+      case 'editPdf':
+        handleEditAsPdf();
+        break;
       case 'email':
         handleEmailToMyself();
         break;
@@ -792,13 +836,17 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
   }
 
   return (
-    <View style={styles.container}>
-      <View style={styles.hero}>
+    <ScreenBackground>
+      <LinearGradient
+        colors={colors.gradientHero}
+        start={{x: 0, y: 0}}
+        end={{x: 1, y: 1}}
+        style={styles.hero}>
         <FeatureBadge
           icon="file-document-outline"
           color={colors.accent}
           size={46}
-          variant="solid"
+          variant="glow"
         />
         <View style={styles.heroTextWrap}>
           <TouchableOpacity
@@ -845,7 +893,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
             />
           )}
         </TouchableOpacity>
-      </View>
+      </LinearGradient>
 
       {pages.length === 0 ? (
         <View style={styles.empty}>
@@ -853,38 +901,34 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
             icon="image-plus"
             color={colors.accent}
             size={72}
-            variant="soft"
+            variant="glow"
           />
           <Text style={styles.emptyTitle}>No pages yet</Text>
           <Text style={styles.emptyText}>
             Add your first page to start building this document.
           </Text>
-          <TouchableOpacity
-            style={styles.emptyBtn}
+          <Button
+            label="Add Page"
+            icon={f.addPage.icon}
+            iconFamily={f.addPage.family}
             onPress={handleAddPage}
-            activeOpacity={0.85}>
-            <Icon
-              name={f.addPage.icon}
-              family={f.addPage.family}
-              size={18}
-              color={colors.white}
-            />
-            <Text style={styles.emptyBtnText}>Add Page</Text>
-          </TouchableOpacity>
+            variant="gradient"
+          />
         </View>
       ) : (
         <FlatList
+          key={`grid-${gridColumns}`}
           data={gridItems}
           keyExtractor={item =>
             item.type === 'page' ? item.page.id : 'add-tile'
           }
-          numColumns={2}
+          numColumns={gridColumns}
           columnWrapperStyle={styles.gridRow}
           contentContainerStyle={styles.list}
           renderItem={({item, index}) =>
             item.type === 'add' ? (
               <TouchableOpacity
-                style={styles.addTile}
+                style={[styles.addTile, {width: pageCardWidthPercent}]}
                 onPress={handleAddPage}
                 activeOpacity={0.7}>
                 <Icon
@@ -897,7 +941,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
               </TouchableOpacity>
             ) : (
               <TouchableOpacity
-                style={styles.pageCard}
+                style={[styles.pageCard, {width: pageCardWidthPercent}]}
                 activeOpacity={0.9}
                 onPress={() => setPreviewPage(item.page)}>
                 <Image
@@ -1057,7 +1101,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
         onSave={handleSaveNote}
         onClose={() => setNotePage(null)}
       />
-    </View>
+    </ScreenBackground>
   );
 }
 
@@ -1117,10 +1161,6 @@ const previewToolbarStyles = StyleSheet.create({
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
     center: {
       flex: 1,
       alignItems: 'center',
@@ -1194,20 +1234,6 @@ const createStyles = (colors: AppColors) =>
       color: colors.textMuted,
       textAlign: 'center',
       marginBottom: 10,
-    },
-    emptyBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      gap: 8,
-      backgroundColor: colors.accent,
-      paddingHorizontal: 20,
-      paddingVertical: 12,
-      borderRadius: 100,
-    },
-    emptyBtnText: {
-      color: colors.white,
-      fontWeight: '700',
-      fontSize: 14,
     },
     list: {
       padding: 16,

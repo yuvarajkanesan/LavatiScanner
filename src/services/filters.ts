@@ -51,3 +51,24 @@ export function getFilterMatrix(filter: FilterType): number[] | null {
       return null;
   }
 }
+
+/**
+ * Amount for the native unsharp-mask pass (0 = skip it). The color matrix
+ * filters are pure per-pixel tone adjustments and can't add or remove
+ * sharpness on their own, but baking any filter means decoding and
+ * re-encoding the JPEG, and that extra generation of lossy compression was
+ * making scanned text look softer than the original capture — "Enhanced"
+ * and "Clean" (the two document-clarity filters) get a real sharpen pass to
+ * counteract that and make the text crisper than the original, not just as
+ * sharp.
+ */
+export function getSharpenAmount(filter: FilterType): number {
+  switch (filter) {
+    case 'enhanced':
+      return 0.4;
+    case 'clean':
+      return 0.25;
+    default:
+      return 0;
+  }
+}

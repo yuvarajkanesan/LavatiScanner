@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import Alert from '../utils/customAlert';
 import {useFocusEffect} from '@react-navigation/native';
 import {TabScreenProps} from '../navigation/types';
@@ -26,6 +27,7 @@ import {formatBytes} from '../utils/format';
 import {promptForText} from '../utils/promptForText';
 import Icon from '../components/Icon';
 import PinPad from '../components/PinPad';
+import ScreenBackground from '../components/ScreenBackground';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -196,16 +198,14 @@ export default function SettingsScreen({navigation}: Props) {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScreenBackground>
+    <ScrollView contentContainerStyle={styles.content}>
       <Section title="Appearance">
         <View style={styles.themeRow}>
           {THEME_OPTIONS.map(option => {
             const active = mode === option.key;
-            return (
-              <TouchableOpacity
-                key={option.key}
-                style={[styles.themeChip, active && styles.themeChipActive]}
-                onPress={() => setMode(option.key)}>
+            const chipContent = (
+              <>
                 <Icon
                   name={option.icon}
                   size={20}
@@ -218,6 +218,29 @@ export default function SettingsScreen({navigation}: Props) {
                   ]}>
                   {option.label}
                 </Text>
+              </>
+            );
+            return active ? (
+              <TouchableOpacity
+                key={option.key}
+                style={styles.themeChipWrap}
+                onPress={() => setMode(option.key)}
+                activeOpacity={0.85}>
+                <LinearGradient
+                  colors={colors.gradientPrimary}
+                  start={{x: 0, y: 0}}
+                  end={{x: 1, y: 1}}
+                  style={[styles.themeChip, styles.themeChipActive]}>
+                  {chipContent}
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                key={option.key}
+                style={[styles.themeChipWrap, styles.themeChip]}
+                onPress={() => setMode(option.key)}
+                activeOpacity={0.7}>
+                {chipContent}
               </TouchableOpacity>
             );
           })}
@@ -302,6 +325,7 @@ export default function SettingsScreen({navigation}: Props) {
         onCancel={() => setPinFlow(null)}
       />
     </ScrollView>
+    </ScreenBackground>
   );
 }
 
@@ -383,12 +407,11 @@ function Row({
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
     content: {
       padding: 16,
+      maxWidth: 600,
+      width: '100%',
+      alignSelf: 'center',
     },
     section: {
       marginBottom: 24,
@@ -403,30 +426,43 @@ const createStyles = (colors: AppColors) =>
     },
     sectionBody: {
       backgroundColor: colors.surface,
-      borderRadius: 10,
+      borderRadius: 14,
       borderWidth: 1,
       borderColor: colors.border,
       overflow: 'hidden',
+      elevation: 2,
+      shadowColor: colors.black,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.08,
+      shadowRadius: 5,
     },
     themeRow: {
       flexDirection: 'row',
       gap: 10,
     },
-    themeChip: {
+    themeChipWrap: {
       flex: 1,
+      borderRadius: 12,
+      overflow: 'hidden',
+    },
+    themeChip: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 6,
       paddingVertical: 12,
-      borderRadius: 10,
+      borderRadius: 12,
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
     },
     themeChipActive: {
-      backgroundColor: colors.accent,
-      borderColor: colors.accent,
+      borderWidth: 0,
+      elevation: 3,
+      shadowColor: colors.black,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.2,
+      shadowRadius: 4,
     },
     themeChipLabel: {
       fontSize: 13,

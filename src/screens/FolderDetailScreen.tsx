@@ -22,6 +22,7 @@ import FolderPickerModal from '../components/FolderPickerModal';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
 import {promptForText} from '../utils/promptForText';
+import {percentWidth, useResponsive} from '../utils/responsive';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'FolderDetail'>;
 type ViewMode = 'grid' | 'list';
@@ -31,6 +32,8 @@ const VIEW_MODE_KEY = 'lavati_home_view_mode';
 export default function FolderDetailScreen({navigation, route}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const {gridColumns} = useResponsive();
+  const cardWidthPercent = percentWidth(100 / gridColumns - 3);
   const {folderId} = route.params;
   const [folder, setFolder] = useState<Folder | null>(null);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
@@ -141,10 +144,10 @@ export default function FolderDetailScreen({navigation, route}: Props) {
         </View>
       ) : viewMode === 'grid' ? (
         <FlatList
-          key="grid"
+          key={`grid-${gridColumns}`}
           data={documents}
           keyExtractor={item => item.id}
-          numColumns={2}
+          numColumns={gridColumns}
           columnWrapperStyle={styles.row}
           contentContainerStyle={styles.list}
           refreshControl={
@@ -162,6 +165,7 @@ export default function FolderDetailScreen({navigation, route}: Props) {
                 navigation.navigate('DocumentDetail', {docId: item.id})
               }
               onLongPress={() => handleLongPress(item)}
+              widthPercent={cardWidthPercent}
             />
           )}
         />

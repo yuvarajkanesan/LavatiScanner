@@ -1,7 +1,7 @@
 import {NativeModules} from 'react-native';
 import RNFS from 'react-native-fs';
 import {FilterType} from '../types/models';
-import {getFilterMatrix} from './filters';
+import {getFilterMatrix, getSharpenAmount} from './filters';
 
 const {ImageFilterModule} = NativeModules;
 
@@ -58,7 +58,8 @@ export async function renderFilterPreview(
     cleanSource,
     outputPath,
     matrix,
-    90,
+    92,
+    getSharpenAmount(filter),
   );
   return `file://${resultPath}`;
 }
@@ -68,7 +69,7 @@ export async function bakeFilterToFile(
   sourceUri: string,
   filter: FilterType,
   outputPath: string,
-  quality: number = 92,
+  quality: number = 97,
 ): Promise<string> {
   const matrix = getFilterMatrix(filter);
   const cleanSource = sourceUri.replace('file://', '');
@@ -81,6 +82,7 @@ export async function bakeFilterToFile(
     outputPath,
     matrix,
     quality,
+    getSharpenAmount(filter),
   );
 }
 
@@ -103,6 +105,7 @@ export async function compressImage(
     outputPath,
     IDENTITY_MATRIX,
     quality,
+    0,
   );
 }
 

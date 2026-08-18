@@ -37,6 +37,7 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
       outputPath: String,
       matrix: ReadableArray,
       quality: Int,
+      sharpenAmount: Double,
       promise: Promise
   ) {
     Thread {
@@ -51,18 +52,24 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
           values[i] = matrix.getDouble(i).toFloat()
         }
 
-        val outBitmap = Bitmap.createBitmap(srcBitmap.width, srcBitmap.height, Bitmap.Config.ARGB_8888)
+        var outBitmap = Bitmap.createBitmap(srcBitmap.width, srcBitmap.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(outBitmap)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         paint.colorFilter = ColorMatrixColorFilter(ColorMatrix(values))
         canvas.drawBitmap(srcBitmap, 0f, 0f, paint)
+        srcBitmap.recycle()
+
+        if (sharpenAmount > 0.0) {
+          val sharpened = sharpen(outBitmap, sharpenAmount.toFloat())
+          outBitmap.recycle()
+          outBitmap = sharpened
+        }
 
         val cleanOutput = outputPath.removePrefix("file://")
         FileOutputStream(File(cleanOutput)).use { out ->
           outBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
         }
 
-        srcBitmap.recycle()
         outBitmap.recycle()
 
         promise.resolve(cleanOutput)
@@ -70,6 +77,54 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         promise.reject("IMAGE_FILTER_ERROR", e.message, e)
       }
     }.start()
+  }
+
+  /**
+   * A single-pass Laplacian unsharp-mask convolution (center weight
+   * 1+4*amount, four orthogonal neighbors weighted -amount) — applied after
+   * the color matrix so filters like "Enhanced" actually crisp up scanned
+   * text instead of just re-compressing it, which was making letters look
+   * softer than the original capture.
+   */
+  private fun sharpen(bitmap: Bitmap, amount: Float): Bitmap {
+    val width = bitmap.width
+    val height = bitmap.height
+    val pixels = IntArray(width * height)
+    bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+    val out = IntArray(width * height)
+
+    val center = 1f + 4f * amount
+    val edge = -amount
+
+    for (y in 0 until height) {
+      val yUp = if (y > 0) y - 1 else y
+      val yDown = if (y < height - 1) y + 1 else y
+      val rowOffset = y * width
+      for (x in 0 until width) {
+        val xLeft = if (x > 0) x - 1 else x
+        val xRight = if (x < width - 1) x + 1 else x
+
+        val pC = pixels[rowOffset + x]
+        val pU = pixels[yUp * width + x]
+        val pD = pixels[yDown * width + x]
+        val pL = pixels[rowOffset + xLeft]
+        val pR = pixels[rowOffset + xRight]
+
+        val a = pC ushr 24 and 0xFF
+        val r = sharpenChannel(center, edge, pC shr 16 and 0xFF, pU shr 16 and 0xFF, pD shr 16 and 0xFF, pL shr 16 and 0xFF, pR shr 16 and 0xFF)
+        val g = sharpenChannel(center, edge, pC shr 8 and 0xFF, pU shr 8 and 0xFF, pD shr 8 and 0xFF, pL shr 8 and 0xFF, pR shr 8 and 0xFF)
+        val b = sharpenChannel(center, edge, pC and 0xFF, pU and 0xFF, pD and 0xFF, pL and 0xFF, pR and 0xFF)
+
+        out[rowOffset + x] = (a shl 24) or (r shl 16) or (g shl 8) or b
+      }
+    }
+
+    return Bitmap.createBitmap(out, width, height, Bitmap.Config.ARGB_8888)
+  }
+
+  private fun sharpenChannel(center: Float, edge: Float, c: Int, u: Int, d: Int, l: Int, r: Int): Int {
+    val v = center * c + edge * (u + d + l + r)
+    return v.toInt().coerceIn(0, 255)
   }
 
   /**

@@ -1,4 +1,4 @@
-import React, {useCallback, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -26,9 +26,12 @@ import {
   MergeSource,
 } from '../services/pdfEdit';
 import {pickPdfFiles} from '../services/documentPicker';
-import {renderPdfPage} from '../services/pdfThumbnail';
+import {renderAllPdfPages, renderPdfPage} from '../services/pdfThumbnail';
+import {saveSessionAsDocument} from '../services/scanPipeline';
+import {promptForText} from '../utils/promptForText';
 import {scanTimestampName} from '../utils/format';
 import Icon from '../components/Icon';
+import FolderPickerModal from '../components/FolderPickerModal';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
 
@@ -51,6 +54,15 @@ export default function PdfMergeScreen({navigation}: Props) {
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [addingPdf, setAddingPdf] = useState(false);
   const [merging, setMerging] = useState(false);
+  const [folderPickerVisible, setFolderPickerVisible] = useState(false);
+  const [pendingSave, setPendingSave] = useState<
+    {pdfPath: string; name: string} | null
+  >(null);
+
+  const totalPages = useMemo(
+    () => queue.reduce((sum, item) => sum + item.pageCount, 0),
+    [queue],
+  );
 
   const load = useCallback(async () => {
     setDocuments(await listDocuments('all'));
@@ -61,6 +73,31 @@ export default function PdfMergeScreen({navigation}: Props) {
       load();
     }, [load]),
   );
+
+  // Warn before leaving with a non-empty merge queue that was never turned
+  // into an actual output — same beforeRemove-interception pattern as
+  // PdfEditorScreen.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', e => {
+      if (queue.length === 0) {
+        return;
+      }
+      e.preventDefault();
+      Alert.alert(
+        'Discard merge queue?',
+        'You have documents queued to merge. Leaving now will clear the queue.',
+        [
+          {text: 'Keep Queue', style: 'cancel'},
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+        ],
+      );
+    });
+    return unsubscribe;
+  }, [navigation, queue]);
 
   function toggleDocument(doc: DocumentSummary) {
     setQueue(prev => {
@@ -126,6 +163,12 @@ export default function PdfMergeScreen({navigation}: Props) {
     if (queue.length < 2) {
       return;
     }
+    const defaultName = `Merged_${scanTimestampName()}`;
+    const name = await promptForText('Name this PDF', defaultName);
+    if (name === null) {
+      return;
+    }
+    const outputName = name.trim() || defaultName;
     try {
       setMerging(true);
       const sources: MergeSource[] = [];
@@ -146,18 +189,66 @@ export default function PdfMergeScreen({navigation}: Props) {
         Alert.alert('Nothing to merge', 'The selected items have no pages.');
         return;
       }
-      const pdfPath = await mergeMixedToPdf(
-        sources,
-        `Merged_${scanTimestampName()}`,
+      const pdfPath = await mergeMixedToPdf(sources, outputName);
+      Alert.alert(
+        `Merged (${totalPages} pages)`,
+        'What would you like to do with it?',
+        [
+          {
+            text: 'Save to Documents',
+            onPress: () => {
+              setPendingSave({pdfPath, name: outputName});
+              setFolderPickerVisible(true);
+            },
+          },
+          {text: 'Share', onPress: () => handleShareMerged(pdfPath)},
+          {text: 'Cancel', style: 'cancel'},
+        ],
       );
+    } catch (error) {
+      Alert.alert('Merge failed', 'Could not merge the selected items.');
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  async function handleShareMerged(pdfPath: string) {
+    try {
       await Share.open({
         url: `file://${pdfPath}`,
         type: 'application/pdf',
         failOnCancel: false,
       });
+      setQueue([]);
       navigation.goBack();
     } catch (error) {
-      Alert.alert('Merge failed', 'Could not merge the selected items.');
+      Alert.alert('Share failed', 'Could not share the merged PDF.');
+    }
+  }
+
+  async function handleSaveMergedToDocuments(folderId: string | null) {
+    setFolderPickerVisible(false);
+    const pending = pendingSave;
+    setPendingSave(null);
+    if (!pending) {
+      return;
+    }
+    try {
+      setMerging(true);
+      const rendered = await renderAllPdfPages(pending.pdfPath);
+      const docId = await saveSessionAsDocument({
+        docName: pending.name,
+        folderId,
+        pages: rendered.map((r, i) => ({
+          id: `p${i}`,
+          rawUri: r.uri,
+          filter: 'original',
+        })),
+      });
+      setQueue([]);
+      navigation.replace('DocumentDetail', {docId});
+    } catch (error) {
+      Alert.alert('Save failed', 'Could not save the merged PDF.');
     } finally {
       setMerging(false);
     }
@@ -167,7 +258,11 @@ export default function PdfMergeScreen({navigation}: Props) {
     <View style={styles.container}>
       {queue.length > 0 && (
         <View style={styles.queueSection}>
-          <Text style={styles.sectionLabel}>Merge order · drag to reorder</Text>
+          <Text style={styles.sectionLabel}>
+            Merge order · drag to reorder · {queue.length} item
+            {queue.length === 1 ? '' : 's'} · {totalPages} page
+            {totalPages === 1 ? '' : 's'}
+          </Text>
           <DraggableFlatList
             data={queue}
             keyExtractor={item => item.key}
@@ -210,6 +305,9 @@ export default function PdfMergeScreen({navigation}: Props) {
                   </TouchableOpacity>
                   <Text style={styles.queueCardText} numberOfLines={1}>
                     {item.name}
+                  </Text>
+                  <Text style={styles.queueCardPages}>
+                    {item.pageCount} page{item.pageCount === 1 ? '' : 's'}
                   </Text>
                 </TouchableOpacity>
               </ScaleDecorator>
@@ -294,6 +392,15 @@ export default function PdfMergeScreen({navigation}: Props) {
           )}
         </TouchableOpacity>
       </View>
+
+      <FolderPickerModal
+        visible={folderPickerVisible}
+        onClose={() => {
+          setFolderPickerVisible(false);
+          setPendingSave(null);
+        }}
+        onPick={handleSaveMergedToDocuments}
+      />
     </View>
   );
 }
@@ -354,6 +461,12 @@ const createStyles = (colors: AppColors) =>
       marginTop: 4,
       fontSize: 10,
       color: colors.textMuted,
+      textAlign: 'center',
+    },
+    queueCardPages: {
+      fontSize: 9,
+      color: colors.textMuted,
+      opacity: 0.75,
       textAlign: 'center',
     },
     sourceHeader: {

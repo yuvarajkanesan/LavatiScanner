@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Pressable,
   RefreshControl,
   SectionList,
   StyleSheet,
@@ -10,6 +11,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import Alert from '../utils/customAlert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Share from 'react-native-share';
@@ -35,10 +42,14 @@ import FolderPickerModal from '../components/FolderPickerModal';
 import OptionSheet, {SheetOption} from '../components/OptionSheet';
 import Fab from '../components/Fab';
 import Icon from '../components/Icon';
+import ScreenBackground from '../components/ScreenBackground';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
 import {scanTimestampName} from '../utils/format';
 import {promptForText} from '../utils/promptForText';
+import {percentWidth, useResponsive} from '../utils/responsive';
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type Props = TabScreenProps<'Home'>;
 
@@ -114,6 +125,8 @@ const SORT_MODE_KEYS: SortMode[] = SORT_OPTIONS.map(o => o.key as SortMode);
 export default function HomeScreen({navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const {gridColumns} = useResponsive();
+  const cardWidthPercent = percentWidth(100 / gridColumns - 3);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
@@ -477,7 +490,7 @@ export default function HomeScreen({navigation}: Props) {
   const currentViewOption = VIEW_OPTIONS.find(o => o.key === viewMode)!;
 
   return (
-    <View style={styles.container}>
+    <ScreenBackground>
       {selectionMode ? (
         <View style={styles.selectionBar}>
           <TouchableOpacity onPress={exitSelectionMode}>
@@ -498,12 +511,7 @@ export default function HomeScreen({navigation}: Props) {
         <>
           <View style={styles.topRow}>
             <Text style={styles.docCount}>All Docs ({documents.length})</Text>
-            <TouchableOpacity
-              style={styles.inlineCameraBtn}
-              onPress={handleNewScan}
-              activeOpacity={0.85}>
-              <Icon name="photo-camera" size={28} color={colors.white} />
-            </TouchableOpacity>
+            <NewScanButton onPress={handleNewScan} />
           </View>
           {documents.length > 0 && (
             <View style={styles.toolbar}>
@@ -542,10 +550,10 @@ export default function HomeScreen({navigation}: Props) {
         </View>
       ) : viewMode === 'grid' ? (
         <FlatList
-          key="grid"
+          key={`grid-${gridColumns}`}
           data={filteredDocuments}
           keyExtractor={item => item.id}
-          numColumns={2}
+          numColumns={gridColumns}
           columnWrapperStyle={styles.row}
           contentContainerStyle={styles.list}
           refreshControl={
@@ -563,6 +571,7 @@ export default function HomeScreen({navigation}: Props) {
               onLongPress={() => handleCardLongPress(item)}
               selectionMode={selectionMode}
               selected={selectedIds.includes(item.id)}
+              widthPercent={cardWidthPercent}
             />
           )}
         />
@@ -752,7 +761,34 @@ export default function HomeScreen({navigation}: Props) {
         onSelect={applySort}
         onClose={() => setSortSheetVisible(false)}
       />
-    </View>
+    </ScreenBackground>
+  );
+}
+
+function NewScanButton({onPress}: {onPress: () => void}) {
+  const {colors} = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({transform: [{scale: scale.value}]}));
+
+  return (
+    <AnimatedPressable
+      style={[styles.inlineCameraBtn, animatedStyle]}
+      onPress={onPress}
+      onPressIn={() => {
+        scale.value = withSpring(0.92, {damping: 15, stiffness: 400});
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, {damping: 15, stiffness: 400});
+      }}>
+      <LinearGradient
+        colors={colors.gradientPrimary}
+        start={{x: 0, y: 0}}
+        end={{x: 1, y: 1}}
+        style={styles.inlineCameraGradient}>
+        <Icon name="photo-camera" size={28} color={colors.white} />
+      </LinearGradient>
+    </AnimatedPressable>
   );
 }
 
@@ -806,10 +842,6 @@ function BulkAction({
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
-    container: {
-      flex: 1,
-      backgroundColor: colors.background,
-    },
     topRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -826,14 +858,18 @@ const createStyles = (colors: AppColors) =>
       width: 56,
       height: 56,
       borderRadius: 28,
-      backgroundColor: colors.accent,
+      elevation: 5,
+      shadowColor: colors.black,
+      shadowOffset: {width: 0, height: 3},
+      shadowOpacity: 0.28,
+      shadowRadius: 6,
+    },
+    inlineCameraGradient: {
+      width: '100%',
+      height: '100%',
+      borderRadius: 28,
       alignItems: 'center',
       justifyContent: 'center',
-      elevation: 3,
-      shadowColor: colors.black,
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.2,
-      shadowRadius: 4,
     },
     toolbar: {
       flexDirection: 'row',
@@ -848,11 +884,16 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       gap: 8,
       paddingHorizontal: 14,
-      height: 44,
-      borderRadius: 10,
+      height: 46,
+      borderRadius: 14,
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
+      elevation: 1,
+      shadowColor: colors.black,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.06,
+      shadowRadius: 3,
     },
     searchInput: {
       flex: 1,

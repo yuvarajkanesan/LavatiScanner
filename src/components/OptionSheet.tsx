@@ -3,6 +3,7 @@ import {Modal, StyleSheet, Text, TouchableOpacity, View} from 'react-native';
 import Icon, {IconFamily} from './Icon';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
+import {useResponsive} from '../utils/responsive';
 
 export interface SheetOption {
   key: string;
@@ -33,6 +34,7 @@ export default function OptionSheet({
 }: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const {contentMaxWidth} = useResponsive();
 
   return (
     <Modal
@@ -46,7 +48,7 @@ export default function OptionSheet({
         onPress={onClose}>
         <TouchableOpacity
           activeOpacity={1}
-          style={styles.sheet}
+          style={[styles.sheet, {maxWidth: contentMaxWidth, width: '100%', alignSelf: 'center'}]}
           onPress={() => {}}>
           <View style={styles.dragHandle} />
           <View style={styles.header}>

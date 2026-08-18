@@ -1,12 +1,12 @@
 import React, {useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   Image,
   PanResponder,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Alert from '../utils/customAlert';
@@ -30,7 +30,6 @@ interface Rect {
 
 type Corner = 'tl' | 'tr' | 'bl' | 'br';
 
-const SCREEN = Dimensions.get('window');
 const MIN_CROP_SIZE = 48;
 const INSET_RATIO = 0.08;
 
@@ -38,6 +37,7 @@ export default function CropPageScreen({navigation, route}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const {docId, pageId, filePath} = route.params;
+  const {width: screenWidth, height: screenHeight} = useWindowDimensions();
 
   const [imageSize, setImageSize] = useState<{
     width: number;
@@ -73,8 +73,8 @@ export default function CropPageScreen({navigation, route}: Props) {
     Image.getSize(
       `file://${filePath}`,
       (width, height) => {
-        const maxW = SCREEN.width - 32;
-        const maxH = SCREEN.height - 280;
+        const maxW = screenWidth - 32;
+        const maxH = screenHeight - 280;
         const scale = Math.min(maxW / width, maxH / height);
         const dw = width * scale;
         const dh = height * scale;
@@ -93,7 +93,7 @@ export default function CropPageScreen({navigation, route}: Props) {
       },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filePath]);
+  }, [filePath, screenWidth, screenHeight]);
 
   function clamp(value: number, min: number, max: number) {
     return Math.max(min, Math.min(max, value));

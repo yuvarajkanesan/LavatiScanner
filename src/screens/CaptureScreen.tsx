@@ -326,6 +326,14 @@ export default function CaptureScreen({navigation, route}: Props) {
           </View>
         )}
 
+        {/* Book mode: a live center guide showing where the spread will be
+            split, so the spine can be lined up before the shutter is even
+            pressed — matches the split line shown after capture on
+            BookScanScreen. */}
+        {!introVisible && mode === 'book' && (
+          <View style={styles.bookSplitGuide} pointerEvents="none" />
+        )}
+
         {device && !introVisible && (
           <Pressable style={StyleSheet.absoluteFill} onPress={handleFocusTap} />
         )}
@@ -411,7 +419,11 @@ export default function CaptureScreen({navigation, route}: Props) {
 
         <View style={styles.modeLabelWrap} pointerEvents="none">
           <Text style={styles.modeLabel}>
-            {backCapture ? 'ID Card · Back Side' : activeModeLabel}
+            {backCapture
+              ? 'ID Card · Back Side'
+              : !introVisible && mode === 'book'
+              ? 'Line up the spine with the center guide'
+              : activeModeLabel}
           </Text>
         </View>
       </View>
@@ -603,6 +615,15 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.85)',
     borderStyle: 'dashed',
+  },
+  bookSplitGuide: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: '50%',
+    width: 2,
+    marginLeft: -1,
+    backgroundColor: colors.accent,
   },
   exposureRow: {
     position: 'absolute',

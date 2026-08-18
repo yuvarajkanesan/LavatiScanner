@@ -1,12 +1,12 @@
 import React, {useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   Image,
   PanResponder,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Svg, {Ellipse, Path, Rect} from 'react-native-svg';
@@ -49,7 +49,6 @@ interface StrokeCircle {
 type Shape = StrokePath | StrokeRect | StrokeCircle;
 type Tool = 'pen' | 'rectangle' | 'circle';
 
-const SCREEN = Dimensions.get('window');
 const COLORS = ['#EF4444', '#F59E0B', '#22C55E', '#3B82F6', '#111111'];
 const STROKE_WIDTH = 4;
 const MIN_SHAPE_SIZE = 3;
@@ -64,6 +63,13 @@ export default function MarkupPageScreen({navigation, route}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const {docId, pageId, filePath} = route.params;
+  // Read once at mount rather than a module-level Dimensions.get() snapshot
+  // (which could be stale from whatever orientation was active when the JS
+  // bundle first loaded) — but not kept reactive to later rotation, since
+  // already-drawn shapes are stored in this screen's display-pixel space and
+  // resizing display out from under them would misalign the artwork.
+  const {width: initialScreenWidth, height: initialScreenHeight} =
+    useWindowDimensions();
 
   const [display, setDisplay] = useState<{
     width: number;
@@ -104,8 +110,8 @@ export default function MarkupPageScreen({navigation, route}: Props) {
     Image.getSize(
       `file://${filePath}`,
       (width, height) => {
-        const maxW = SCREEN.width - 32;
-        const maxH = SCREEN.height - 260;
+        const maxW = initialScreenWidth - 32;
+        const maxH = initialScreenHeight - 260;
         const scale = Math.min(maxW / width, maxH / height);
         setDisplay({width: width * scale, height: height * scale});
       },

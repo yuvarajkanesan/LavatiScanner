@@ -12,6 +12,13 @@ export const lightColors = {
   overlay: 'rgba(0,0,0,0.55)',
   white: '#FFFFFF',
   black: '#000000',
+  /** Bold gradient accents for premium CTAs (buttons, FAB, active tab, hero badges). */
+  gradientPrimary: ['#2E6BF2', '#17B4E0'] as [string, string],
+  gradientGold: ['#F3C065', '#E0A32E'] as [string, string],
+  /** Subtle full-screen wash — accent bleeding faintly from the top-left corner into the base background. */
+  gradientBackground: ['#EAF6FC', '#FFFFFF'] as [string, string],
+  /** Stronger banner gradient for header/hero bands. */
+  gradientHero: ['#E4F4FC', '#F7FBFD'] as [string, string],
 };
 
 export const darkColors: AppColors = {
@@ -28,6 +35,10 @@ export const darkColors: AppColors = {
   overlay: 'rgba(0,0,0,0.65)',
   white: '#FFFFFF',
   black: '#000000',
+  gradientPrimary: ['#4F8CFF', '#38D9E8'],
+  gradientGold: ['#FFD98A', '#E7B65A'],
+  gradientBackground: ['#152230', '#0E1720'],
+  gradientHero: ['#1A2C3D', '#14202C'],
 };
 
 export type AppColors = typeof lightColors;

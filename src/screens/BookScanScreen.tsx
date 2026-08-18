@@ -1,38 +1,35 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   ActivityIndicator,
-  Dimensions,
   Image,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Alert from '../utils/customAlert';
-import {captureRef} from 'react-native-view-shot';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
 import {createDocument, addPage as addPageRecord} from '../db/database';
 import {persistPageImage} from '../services/fileStorage';
+import {cropImageFile} from '../services/pdfExport';
 import {scanTimestampName} from '../utils/format';
 import Icon from '../components/Icon';
 import {colors} from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'BookScan'>;
 
-const SCREEN_WIDTH = Dimensions.get('window').width - 32;
-
 export default function BookScanScreen({navigation, route}: Props) {
   const insets = useSafeAreaInsets();
+  const SCREEN_WIDTH = useWindowDimensions().width - 32;
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<{
     width: number;
     height: number;
   } | null>(null);
   const [saving, setSaving] = useState(false);
-  const leftHalfRef = useRef<View>(null);
-  const rightHalfRef = useRef<View>(null);
 
   useEffect(() => {
     const capturedUri = route.params?.capturedUri;
@@ -72,25 +69,38 @@ export default function BookScanScreen({navigation, route}: Props) {
   }
 
   async function handleSplitAndSave() {
-    if (!imageUri || !imageSize) {
+    if (!imageUri) {
       return;
     }
     try {
       setSaving(true);
-      // The capture rig only mounts once `saving` is true (see below), so
-      // give it a frame to actually mount and paint before screenshotting.
-      await new Promise(resolve => setTimeout(resolve, 100));
-      const leftPath = await captureRef(leftHalfRef, {
-        format: 'jpg',
-        quality: 0.92,
-      });
-      const rightPath = await captureRef(rightHalfRef, {
-        format: 'jpg',
-        quality: 0.92,
-      });
+      // Crop the full-resolution source photo directly (via the same
+      // throwaway-PDF + native-PdfRenderer round-trip used elsewhere for
+      // crops) rather than screenshotting the on-screen preview — the old
+      // approach relied on a hidden capture rig + a fixed delay to let it
+      // paint before view-shot read it, which could still race and produce
+      // a solid-black page. This also captures at full camera resolution
+      // instead of the screen-downscaled preview.
+      const timestamp = scanTimestampName();
+      const leftPath = await cropImageFile(
+        imageUri,
+        0,
+        0,
+        0.5,
+        1,
+        `book_left_${timestamp}`,
+      );
+      const rightPath = await cropImageFile(
+        imageUri,
+        0.5,
+        0,
+        0.5,
+        1,
+        `book_right_${timestamp}`,
+      );
 
       const doc = await createDocument(
-        `Book_${scanTimestampName()}`,
+        `Book_${timestamp}`,
         route.params?.folderId ?? null,
       );
       const finalLeft = await persistPageImage(doc.id, leftPath);
@@ -109,7 +119,6 @@ export default function BookScanScreen({navigation, route}: Props) {
   const displayHeight = imageSize
     ? (SCREEN_WIDTH * imageSize.height) / imageSize.width
     : 0;
-  const halfWidth = SCREEN_WIDTH / 2;
 
   return (
     <View style={styles.container}>
@@ -137,55 +146,6 @@ export default function BookScanScreen({navigation, route}: Props) {
             />
             <View style={styles.splitLine} />
           </View>
-
-          {/* Capture rig, kept at real on-screen coordinates on purpose — a
-              view positioned off-screen or made transparent (opacity: 0,
-              as this used to be) can end up never actually drawn before
-              view-shot reads it, producing a solid-black capture. Only
-              mounted while actively splitting, with an opaque veil on top
-              so the user never sees the raw halves being assembled. */}
-          {saving && (
-            <View style={styles.splitCaptureLayer} pointerEvents="none">
-              <View
-                ref={leftHalfRef}
-                collapsable={false}
-                style={{
-                  width: halfWidth,
-                  height: displayHeight,
-                  overflow: 'hidden',
-                }}>
-                <Image
-                  source={{uri: imageUri}}
-                  style={{width: SCREEN_WIDTH, height: displayHeight}}
-                  resizeMode="contain"
-                />
-              </View>
-              <View
-                ref={rightHalfRef}
-                collapsable={false}
-                style={{
-                  width: halfWidth,
-                  height: displayHeight,
-                  overflow: 'hidden',
-                }}>
-                <Image
-                  source={{uri: imageUri}}
-                  style={{
-                    width: SCREEN_WIDTH,
-                    height: displayHeight,
-                    marginLeft: -halfWidth,
-                  }}
-                  resizeMode="contain"
-                />
-              </View>
-              <View style={styles.splitCaptureVeil}>
-                <ActivityIndicator color={colors.white} size="large" />
-                <Text style={styles.splitCaptureVeilText}>
-                  Splitting pages…
-                </Text>
-              </View>
-            </View>
-          )}
 
           <View style={[styles.actionBar, {paddingBottom: 14 + insets.bottom}]}>
             <TouchableOpacity
@@ -246,30 +206,6 @@ const styles = StyleSheet.create({
     left: '50%',
     width: 2,
     backgroundColor: colors.accent,
-  },
-  splitCaptureLayer: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    flexDirection: 'row',
-  },
-  splitCaptureVeil: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  splitCaptureVeilText: {
-    color: colors.white,
-    fontWeight: '700',
-    fontSize: 13,
   },
   actionBar: {
     padding: 14,
