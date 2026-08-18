@@ -1,35 +1,142 @@
 import RNFS from 'react-native-fs';
-import {PDFDocument, PDFImage, degrees} from 'pdf-lib';
+import {
+  PDFDocument,
+  PDFFont,
+  PDFImage,
+  PDFPage,
+  StandardFonts,
+  TextRenderingMode,
+  beginText,
+  degrees,
+  endText,
+  popGraphicsState,
+  pushGraphicsState,
+  setFontAndSize,
+  setTextMatrix,
+  setTextRenderingMode,
+  showText,
+} from 'pdf-lib';
 import {ensureExportsDir} from './fileStorage';
 import {readFileBytes, writeFileBytes} from './pdfBytes';
 import {renderPdfPage} from './pdfThumbnail';
+import {OcrBlockRatio} from '../types/models';
 
 /** Caps the combined canvas for `buildLongImage` so very long documents
  * don't ask the device to rasterize an impractically huge bitmap. */
 const MAX_LONG_IMAGE_HEIGHT = 8000;
 
+/** Parses a `Page.ocrBlocks` JSON string (or null/invalid) into blocks, or
+ * null if there's nothing usable — callers pass this straight through to
+ * `buildPdfFromImages`'s optional per-page OCR blocks. */
+export function parsePageOcrBlocks(
+  ocrBlocks: string | null | undefined,
+): OcrBlockRatio[] | null {
+  if (!ocrBlocks) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(ocrBlocks);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Draws each OCR'd line as invisible-but-selectable text (PDF text
+ * rendering mode 3) positioned over the page image, using pdf-lib's public
+ * low-level operator API (`pushOperators` + `setTextRenderingMode`) — not
+ * `page.drawText()`, which has no way to request invisible mode. This is
+ * what makes the exported PDF's text searchable/selectable/copyable in
+ * viewers like Acrobat or Google Drive, without changing how the page looks
+ * (the image is still what's actually painted).
+ */
+function drawInvisibleTextLayer(
+  page: PDFPage,
+  font: PDFFont,
+  pageWidth: number,
+  pageHeight: number,
+  blocks: OcrBlockRatio[],
+): void {
+  const fontKey = page.node.newFontDictionary(font.name, font.ref);
+  for (const block of blocks) {
+    const text = block.text.trim();
+    const boxWidth = block.width * pageWidth;
+    const boxHeight = block.height * pageHeight;
+    if (!text || boxWidth <= 0 || boxHeight <= 0) {
+      continue;
+    }
+    try {
+      // Size the invisible glyphs so their natural width roughly matches
+      // the OCR'd line's own pixel width — close enough alignment with the
+      // visible word underneath for tap-to-select, without needing
+      // per-glyph kerning precision (it's never actually painted).
+      const naturalWidth = font.widthOfTextAtSize(text, boxHeight);
+      const size =
+        naturalWidth > 0
+          ? Math.min(boxHeight, (boxWidth / naturalWidth) * boxHeight)
+          : boxHeight;
+      const x = block.left * pageWidth;
+      // `top` is measured from the top of the source image; PDF points are
+      // bottom-left origin — same flip already used by addSignatureAtPosition.
+      const y = pageHeight - block.top * pageHeight - boxHeight;
+
+      page.pushOperators(
+        pushGraphicsState(),
+        beginText(),
+        setTextRenderingMode(TextRenderingMode.Invisible),
+        setFontAndSize(fontKey, size),
+        setTextMatrix(1, 0, 0, 1, x, y),
+        showText(font.encodeText(text)),
+        endText(),
+        popGraphicsState(),
+      );
+    } catch {
+      // A single line with characters outside the embedded font's
+      // supported encoding shouldn't fail the whole export — the page
+      // still looks and works fine, it just won't include that one line
+      // in the searchable layer.
+    }
+  }
+}
+
 /**
  * Assembles a multi-page PDF from an ordered list of JPG file paths using
  * pdf-lib (pure JS — no native module, so it can't go out of sync with the
  * RN/Android toolchain). Each JPG is embedded on its own page sized to the
- * image's pixel dimensions at 72dpi.
+ * image's pixel dimensions at 72dpi. When `pagesOcrBlocks` is given (parallel
+ * array, aligned by index to `pageFilePaths`), pages with OCR data get an
+ * invisible searchable-text layer; pages without it (OCR still pending, or
+ * none available) just get the plain image, unchanged from before.
  */
 export async function buildPdfFromImages(
   pageFilePaths: string[],
   outputName: string,
+  pagesOcrBlocks?: (OcrBlockRatio[] | null)[],
 ): Promise<string> {
   if (pageFilePaths.length === 0) {
     throw new Error('Cannot build a PDF with zero pages');
   }
 
   const pdfDoc = await PDFDocument.create();
+  const needsTextLayer = pagesOcrBlocks?.some(
+    blocks => blocks && blocks.length > 0,
+  );
+  const invisibleFont = needsTextLayer
+    ? await pdfDoc.embedFont(StandardFonts.Helvetica)
+    : null;
 
-  for (const filePath of pageFilePaths) {
-    const jpgBytes = await readFileBytes(filePath);
+  for (let i = 0; i < pageFilePaths.length; i++) {
+    const jpgBytes = await readFileBytes(pageFilePaths[i]);
     const jpgImage = await pdfDoc.embedJpg(jpgBytes);
     const {width, height} = jpgImage.size();
     const page = pdfDoc.addPage([width, height]);
     page.drawImage(jpgImage, {x: 0, y: 0, width, height});
+
+    const blocks = pagesOcrBlocks?.[i];
+    if (blocks && blocks.length > 0 && invisibleFont) {
+      drawInvisibleTextLayer(page, invisibleFont, width, height, blocks);
+    }
   }
 
   const pdfBytes = await pdfDoc.save();

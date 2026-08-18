@@ -1,4 +1,5 @@
 import SQLite, {SQLiteDatabase, ResultSet} from 'react-native-sqlite-storage';
+import RNFS from 'react-native-fs';
 import {generateId} from '../utils/ids';
 import {Document, DocumentSummary, Folder, Page} from '../types/models';
 
@@ -45,8 +46,10 @@ export async function getDatabase(): Promise<SQLiteDatabase> {
       pageIndex INTEGER NOT NULL,
       filePath TEXT NOT NULL,
       ocrText TEXT,
+      ocrBlocks TEXT,
       pageName TEXT,
       note TEXT,
+      fileSize INTEGER,
       createdAt INTEGER NOT NULL,
       FOREIGN KEY (docId) REFERENCES documents(id) ON DELETE CASCADE
     );
@@ -73,8 +76,40 @@ export async function getDatabase(): Promise<SQLiteDatabase> {
   if (!existingColumns.includes('note')) {
     await dbInstance.executeSql('ALTER TABLE pages ADD COLUMN note TEXT;');
   }
+  if (!existingColumns.includes('ocrBlocks')) {
+    await dbInstance.executeSql(
+      'ALTER TABLE pages ADD COLUMN ocrBlocks TEXT;',
+    );
+  }
+  if (!existingColumns.includes('fileSize')) {
+    await dbInstance.executeSql(
+      'ALTER TABLE pages ADD COLUMN fileSize INTEGER;',
+    );
+  }
+  await backfillMissingFileSizes(dbInstance);
 
   return dbInstance;
+}
+
+/** One-time backfill for pages saved before the `fileSize` column existed,
+ * so existing documents show a real size instead of "0 B". Cheap/idempotent
+ * — only touches rows still NULL, silently skips files that no longer exist. */
+async function backfillMissingFileSizes(db: SQLiteDatabase): Promise<void> {
+  const [result] = await db.executeSql(
+    'SELECT id, filePath FROM pages WHERE fileSize IS NULL;',
+  );
+  const pending = rowsToArray<{id: string; filePath: string}>(result);
+  for (const page of pending) {
+    try {
+      const stat = await RNFS.stat(page.filePath);
+      await db.executeSql('UPDATE pages SET fileSize = ? WHERE id = ?;', [
+        Number(stat.size),
+        page.id,
+      ]);
+    } catch {
+      // File missing/unreadable - leave fileSize NULL, treated as 0 in sums.
+    }
+  }
 }
 
 function rowsToArray<T>(result: ResultSet): T[] {
@@ -165,11 +200,34 @@ export async function listDocuments(
   const [result] = await db.executeSql(
     `SELECT d.*,
        (SELECT COUNT(*) FROM pages p WHERE p.docId = d.id) AS pageCount,
-       (SELECT p.filePath FROM pages p WHERE p.docId = d.id ORDER BY p.pageIndex ASC LIMIT 1) AS thumbnailPath
+       (SELECT p.filePath FROM pages p WHERE p.docId = d.id ORDER BY p.pageIndex ASC LIMIT 1) AS thumbnailPath,
+       (SELECT COALESCE(SUM(p.fileSize), 0) FROM pages p WHERE p.docId = d.id) AS totalSizeBytes
      FROM documents d
      ${whereClause}
      ORDER BY d.updatedAt DESC;`,
     params,
+  );
+  return rowsToArray<DocumentSummary>(result);
+}
+
+/** Documents that have at least one page whose OCR'd text contains `query`
+ * (case-insensitive substring match). Content-only — callers that also want
+ * name matches (e.g. HomeScreen's search bar) union this with their own
+ * in-memory name filter. */
+export async function searchDocumentsByText(
+  query: string,
+): Promise<DocumentSummary[]> {
+  const db = await getDatabase();
+  const [result] = await db.executeSql(
+    `SELECT DISTINCT d.*,
+       (SELECT COUNT(*) FROM pages p2 WHERE p2.docId = d.id) AS pageCount,
+       (SELECT p2.filePath FROM pages p2 WHERE p2.docId = d.id ORDER BY p2.pageIndex ASC LIMIT 1) AS thumbnailPath,
+       (SELECT COALESCE(SUM(p2.fileSize), 0) FROM pages p2 WHERE p2.docId = d.id) AS totalSizeBytes
+     FROM documents d
+     JOIN pages p ON p.docId = d.id
+     WHERE p.ocrText LIKE ?
+     ORDER BY d.updatedAt DESC;`,
+    [`%${query}%`],
   );
   return rowsToArray<DocumentSummary>(result);
 }
@@ -190,18 +248,26 @@ export async function addPage(
     );
     index = Number(countResult.rows.item(0).count);
   }
+  let fileSize: number | null = null;
+  try {
+    const stat = await RNFS.stat(filePath);
+    fileSize = Number(stat.size);
+  } catch {
+    fileSize = null;
+  }
   const page: Page = {
     id: generateId(),
     docId,
     pageIndex: index,
     filePath,
     ocrText: null,
+    ocrBlocks: null,
     pageName: null,
     note: null,
     createdAt: Date.now(),
   };
   await db.executeSql(
-    'INSERT INTO pages (id, docId, pageIndex, filePath, ocrText, pageName, note, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?);',
+    'INSERT INTO pages (id, docId, pageIndex, filePath, ocrText, pageName, note, fileSize, createdAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);',
     [
       page.id,
       page.docId,
@@ -210,6 +276,7 @@ export async function addPage(
       page.ocrText,
       page.pageName,
       page.note,
+      fileSize,
       page.createdAt,
     ],
   );
@@ -282,6 +349,20 @@ export async function setPageFilePath(
 export async function setPageOcrText(id: string, text: string): Promise<void> {
   const db = await getDatabase();
   await db.executeSql('UPDATE pages SET ocrText = ? WHERE id = ?;', [text, id]);
+}
+
+/** `blocksJson` is a JSON-serialized array of ratio-space OCR blocks (see
+ * `OcrBlockRatio` in services/scanPipeline.ts) — used to place an invisible
+ * searchable-text layer over each page's image when exporting a PDF. */
+export async function setPageOcrBlocks(
+  id: string,
+  blocksJson: string | null,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.executeSql('UPDATE pages SET ocrBlocks = ? WHERE id = ?;', [
+    blocksJson,
+    id,
+  ]);
 }
 
 async function reindexPages(docId: string): Promise<void> {

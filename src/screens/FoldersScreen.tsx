@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import Alert from '../utils/customAlert';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
@@ -39,6 +40,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Folders'>;
 export default function FoldersScreen({navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   const [folders, setFolders] = useState<FolderRow[]>([]);
   const [pendingFolder, setPendingFolder] = useState<Folder | null>(null);
   const [pinError, setPinError] = useState<string | undefined>();
@@ -232,7 +234,11 @@ export default function FoldersScreen({navigation}: Props) {
         />
       )}
 
-      <Fab onPress={handleCreateFolder} icon="create-new-folder" />
+      <Fab
+        onPress={handleCreateFolder}
+        icon="create-new-folder"
+        bottom={24 + insets.bottom}
+      />
 
       <PinPad
         visible={pendingFolder !== null}

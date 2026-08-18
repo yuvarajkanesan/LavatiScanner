@@ -1,6 +1,7 @@
 import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
 import { MainTabParamList } from './types';
 import HomeScreen from '../screens/HomeScreen';
@@ -58,6 +59,7 @@ const ICONS_FILLED: Record<keyof MainTabParamList, string> = {
 
 export default function MainTabs() {
   const { colors } = useTheme();
+  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -83,8 +85,8 @@ export default function MainTabs() {
         tabBarStyle: {
           borderTopColor: colors.border,
           backgroundColor: colors.background,
-          height: 60,
-          paddingBottom: 6,
+          height: 70 + insets.bottom,
+          paddingBottom: 16 + insets.bottom,
           paddingTop: 8,
           elevation: 8,
           shadowColor: colors.black,

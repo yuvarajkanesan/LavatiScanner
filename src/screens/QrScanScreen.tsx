@@ -100,7 +100,11 @@ export default function QrScanScreen({navigation, route}: Props) {
           </TouchableOpacity>
         </View>
       ) : (
-        <ScrollView contentContainerStyle={styles.list}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.list,
+            {paddingBottom: 16 + insets.bottom},
+          ]}>
           {results?.map((barcode, i) => (
             <View key={i} style={styles.resultCard}>
               <Text style={styles.resultValue} selectable>

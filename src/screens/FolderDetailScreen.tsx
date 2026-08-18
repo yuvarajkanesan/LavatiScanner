@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {FlatList, RefreshControl, StyleSheet, Text, View} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from '../components/Icon';
@@ -34,6 +35,7 @@ export default function FolderDetailScreen({navigation, route}: Props) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const {gridColumns} = useResponsive();
   const cardWidthPercent = percentWidth(100 / gridColumns - 3);
+  const insets = useSafeAreaInsets();
   const {folderId} = route.params;
   const [folder, setFolder] = useState<Folder | null>(null);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
@@ -199,9 +201,13 @@ export default function FolderDetailScreen({navigation, route}: Props) {
         icon={viewMode === 'grid' ? 'view-list' : 'grid-view'}
         variant="secondary"
         size={46}
-        bottom={92}
+        bottom={92 + insets.bottom}
       />
-      <Fab onPress={handleNewScan} icon="photo-camera" />
+      <Fab
+        onPress={handleNewScan}
+        icon="photo-camera"
+        bottom={24 + insets.bottom}
+      />
 
       <FolderPickerModal
         visible={movingDoc !== null}

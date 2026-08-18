@@ -10,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import Share, {Social} from 'react-native-share';
 import {CameraRoll} from '@react-native-camera-roll/camera-roll';
@@ -40,10 +41,10 @@ import {
 import {
   buildLongImage,
   buildPdfFromImages,
+  parsePageOcrBlocks,
   rotateImageFile90,
 } from '../services/pdfExport';
 import {recognizeTextFromImage} from '../services/ocr';
-import {getMyEmail} from '../services/userSettings';
 import {Document, Page} from '../types/models';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
@@ -154,10 +155,10 @@ const MORE_ACTIONS: SheetOption[] = [
   },
   {
     key: 'email',
-    label: 'Email to Myself',
-    icon: f.emailMyself.icon,
-    family: f.emailMyself.family,
-    color: f.emailMyself.color,
+    label: 'Share via Email',
+    icon: f.shareEmail.icon,
+    family: f.shareEmail.family,
+    color: f.shareEmail.color,
   },
   {
     key: 'duplicate',
@@ -220,10 +221,10 @@ const PREVIEW_MORE_ACTIONS: SheetOption[] = [
   },
   {
     key: 'email',
-    label: 'Email to Myself',
-    icon: f.emailMyself.icon,
-    family: f.emailMyself.family,
-    color: f.emailMyself.color,
+    label: 'Share via Email',
+    icon: f.shareEmail.icon,
+    family: f.shareEmail.family,
+    color: f.shareEmail.color,
   },
   {
     key: 'markup',
@@ -241,6 +242,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const {gridColumns} = useResponsive();
   const pageCardWidthPercent = percentWidth(100 / gridColumns - 3);
+  const insets = useSafeAreaInsets();
   const {docId} = route.params;
   const session = useScanSession();
 
@@ -541,6 +543,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
       const pdfPath = await buildPdfFromImages(
         [page.filePath],
         `${doc.name}_page`,
+        [parsePageOcrBlocks(page.ocrBlocks)],
       );
       await Share.open({
         url: `file://${pdfPath}`,
@@ -586,16 +589,8 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     }
   }
 
-  async function handleEmailPageToMyself(page: Page) {
+  async function handleSharePageEmail(page: Page) {
     if (!doc) {
-      return;
-    }
-    const email = await getMyEmail();
-    if (!email) {
-      Alert.alert(
-        'No email set',
-        'Set your email first in Settings > Sharing > Set my email.',
-      );
       return;
     }
     try {
@@ -603,10 +598,10 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
       const pdfPath = await buildPdfFromImages(
         [page.filePath],
         `${doc.name}_page`,
+        [parsePageOcrBlocks(page.ocrBlocks)],
       );
       await Share.shareSingle({
         social: Social.Email,
-        email,
         url: `file://${pdfPath}`,
         subject: doc.name,
         title: doc.name,
@@ -644,7 +639,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
         handleSaveToGallery(page);
         break;
       case 'email':
-        handleEmailPageToMyself(page);
+        handleSharePageEmail(page);
         break;
       case 'markup':
         handleMarkupPreview();
@@ -661,6 +656,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
       const pdfPath = await buildPdfFromImages(
         pages.map(p => p.filePath),
         doc.name,
+        pages.map(p => parsePageOcrBlocks(p.ocrBlocks)),
       );
       await Share.open({
         url: `file://${pdfPath}`,
@@ -683,6 +679,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
       const pdfPath = await buildPdfFromImages(
         pages.map(p => p.filePath),
         doc.name,
+        pages.map(p => parsePageOcrBlocks(p.ocrBlocks)),
       );
       navigation.navigate('PdfEditor', {uri: pdfPath, name: doc.name});
     } catch (error) {
@@ -712,16 +709,8 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     }
   }
 
-  async function handleEmailToMyself() {
+  async function handleShareDocumentEmail() {
     if (pages.length === 0 || !doc) {
-      return;
-    }
-    const email = await getMyEmail();
-    if (!email) {
-      Alert.alert(
-        'No email set',
-        'Set your email first in Settings > Sharing > Set my email.',
-      );
       return;
     }
     try {
@@ -729,10 +718,10 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
       const pdfPath = await buildPdfFromImages(
         pages.map(p => p.filePath),
         doc.name,
+        pages.map(p => parsePageOcrBlocks(p.ocrBlocks)),
       );
       await Share.shareSingle({
         social: Social.Email,
-        email,
         url: `file://${pdfPath}`,
         subject: doc.name,
         title: doc.name,
@@ -813,7 +802,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
         handleEditAsPdf();
         break;
       case 'email':
-        handleEmailToMyself();
+        handleShareDocumentEmail();
         break;
       case 'duplicate':
         handleDuplicateDocument();
@@ -1001,7 +990,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
         onRequestClose={() => setPreviewPage(null)}>
         <View style={styles.previewBackdrop}>
           <TouchableOpacity
-            style={styles.previewClose}
+            style={[styles.previewClose, {top: 20 + insets.top}]}
             onPress={() => setPreviewPage(null)}
             hitSlop={10}>
             <Icon name="close" size={26} color={colors.white} />
@@ -1013,7 +1002,8 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
               resizeMode="contain"
             />
           )}
-          <View style={styles.previewToolbar}>
+          <View
+            style={[styles.previewToolbar, {paddingBottom: 20 + insets.bottom}]}>
             <PreviewToolbarButton
               icon={f.crop.icon}
               family={f.crop.family}

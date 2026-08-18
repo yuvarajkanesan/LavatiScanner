@@ -150,6 +150,11 @@ dependencies {
     implementation("com.facebook.react:react-android")
     implementation("com.facebook.react:flipper-integration")
 
+    // Live edge-detection + auto-capture scan flow for "Docs" mode (see
+    // DocumentScannerModule.kt) — no google-services.json/Firebase config
+    // needed, unlike Firebase-backed GMS services.
+    implementation("com.google.android.gms:play-services-mlkit-document-scanner:16.0.0")
+
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")
     } else {

@@ -211,7 +211,7 @@ export default function SignPageScreen({navigation, route}: Props) {
       </View>
 
       <TouchableOpacity
-        style={styles.applyButton}
+        style={[styles.applyButton, {marginBottom: 20 + insets.bottom}]}
         onPress={handleApply}
         disabled={saving}>
         {saving ? (

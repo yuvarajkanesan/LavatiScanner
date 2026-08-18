@@ -6,8 +6,15 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
+  Vibration,
   View,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import {
   Camera,
   useCameraDevice,
@@ -15,10 +22,12 @@ import {
 } from 'react-native-vision-camera';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
+import Alert from '../utils/customAlert';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {CaptureMode, RootStackParamList} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
 import {pickGalleryImages, pickImportFiles} from '../services/filePicker';
+import {startDocumentScan} from '../services/documentScanner';
 import {ID_CARD_SUB_MODES, IdCardSubMode} from '../constants/idCardModes';
 import Icon from '../components/Icon';
 import IdCardIllustration from '../components/IdCardIllustration';
@@ -108,6 +117,7 @@ export default function CaptureScreen({navigation, route}: Props) {
   const [exposure, setExposure] = useState(0);
   const [exposureVisible, setExposureVisible] = useState(false);
   const [capturing, setCapturing] = useState(false);
+  const [scanningDocs, setScanningDocs] = useState(false);
   const [isScreenActive, setIsScreenActive] = useState(true);
   const [introVisible, setIntroVisible] = useState(() =>
     needsIntro(route.params?.mode ?? 'docs', !!backCapture),
@@ -122,6 +132,10 @@ export default function CaptureScreen({navigation, route}: Props) {
 
   const cameraRef = useRef<Camera>(null);
   const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashOpacity = useSharedValue(0);
+  const flashOverlayStyle = useAnimatedStyle(() => ({
+    opacity: flashOpacity.value,
+  }));
   const device = useCameraDevice(cameraPosition);
   const backDevice = useCameraDevice('back');
   const frontDevice = useCameraDevice('front');
@@ -231,12 +245,46 @@ export default function CaptureScreen({navigation, route}: Props) {
     }
   }
 
+  /**
+   * "Docs" mode launches Google's ML Kit Document Scanner instead of using
+   * our own live camera — it already does edge detection, perspective
+   * correction, and multi-page capture natively, so returned pages go
+   * straight into the session (skipping the manual Trim screen, which is
+   * for raw uncropped photos) and on to Filter for filter selection.
+   */
+  async function handleDocumentScan() {
+    if (scanningDocs) {
+      return;
+    }
+    try {
+      setScanningDocs(true);
+      const uris = await startDocumentScan();
+      if (uris.length === 0) {
+        return;
+      }
+      const pageIds = uris.map(uri => session.addPage(uri));
+      navigation.replace('Filter', {pageId: pageIds[0]});
+    } catch (error) {
+      Alert.alert(
+        'Scan failed',
+        'Could not open the document scanner. Please try again.',
+      );
+    } finally {
+      setScanningDocs(false);
+    }
+  }
+
   async function handleCapture() {
     if (!cameraRef.current || capturing) {
       return;
     }
     try {
       setCapturing(true);
+      Vibration.vibrate(40);
+      flashOpacity.value = withSequence(
+        withTiming(1, {duration: 60}),
+        withTiming(0, {duration: 200}),
+      );
       const photo = await cameraRef.current.takePhoto({
         flash,
         enableShutterSound: false,
@@ -308,6 +356,11 @@ export default function CaptureScreen({navigation, route}: Props) {
             <ActivityIndicator color={colors.white} size="large" />
           </View>
         )}
+
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.flashOverlay, flashOverlayStyle]}
+        />
 
         {showGrid && (
           <View style={StyleSheet.absoluteFill} pointerEvents="none">
@@ -421,6 +474,8 @@ export default function CaptureScreen({navigation, route}: Props) {
           <Text style={styles.modeLabel}>
             {backCapture
               ? 'ID Card · Back Side'
+              : mode === 'docs'
+              ? 'Tap the shutter to open the document scanner'
               : !introVisible && mode === 'book'
               ? 'Line up the spine with the center guide'
               : activeModeLabel}
@@ -457,11 +512,13 @@ export default function CaptureScreen({navigation, route}: Props) {
 
         <TouchableOpacity
           style={styles.shutter}
-          onPress={handleCapture}
-          disabled={capturing || !device}
+          onPress={mode === 'docs' ? handleDocumentScan : handleCapture}
+          disabled={mode === 'docs' ? scanningDocs : capturing || !device}
           hitSlop={8}>
-          {capturing ? (
+          {(mode === 'docs' ? scanningDocs : capturing) ? (
             <ActivityIndicator color={colors.black} />
+          ) : mode === 'docs' ? (
+            <Icon name="document-scanner" size={26} color={colors.black} />
           ) : (
             <View style={styles.shutterInner} />
           )}
@@ -587,6 +644,10 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  flashOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: colors.white,
   },
   gridLineV: {
     position: 'absolute',

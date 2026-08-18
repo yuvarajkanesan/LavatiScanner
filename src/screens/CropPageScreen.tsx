@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
@@ -36,6 +37,7 @@ const INSET_RATIO = 0.08;
 export default function CropPageScreen({navigation, route}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   const {docId, pageId, filePath} = route.params;
   const {width: screenWidth, height: screenHeight} = useWindowDimensions();
 
@@ -74,7 +76,7 @@ export default function CropPageScreen({navigation, route}: Props) {
       `file://${filePath}`,
       (width, height) => {
         const maxW = screenWidth - 32;
-        const maxH = screenHeight - 280;
+        const maxH = screenHeight - 280 - insets.top - insets.bottom;
         const scale = Math.min(maxW / width, maxH / height);
         const dw = width * scale;
         const dh = height * scale;
@@ -211,7 +213,7 @@ export default function CropPageScreen({navigation, route}: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
+      <View style={[styles.header, {paddingTop: insets.top + 20}]}>
         <TouchableOpacity onPress={() => navigation.goBack()} hitSlop={8}>
           <Icon name="close" size={24} color={colors.white} />
         </TouchableOpacity>
@@ -306,7 +308,7 @@ export default function CropPageScreen({navigation, route}: Props) {
       </View>
 
       <TouchableOpacity
-        style={styles.applyButton}
+        style={[styles.applyButton, {marginBottom: 20 + insets.bottom}]}
         onPress={handleApply}
         disabled={saving || !rect}>
         {saving ? (
@@ -335,7 +337,6 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: 18,
-      paddingTop: 50,
       paddingBottom: 16,
     },
     title: {
@@ -389,7 +390,6 @@ const createStyles = (colors: AppColors) =>
       justifyContent: 'center',
       gap: 8,
       marginHorizontal: 16,
-      marginBottom: 20,
       height: 50,
       borderRadius: 12,
       backgroundColor: colors.accent,

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import Svg, {Polygon} from 'react-native-svg';
 import RNFS from 'react-native-fs';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
@@ -33,6 +34,7 @@ const INSET_RATIO = 0.04;
 
 export default function TrimPageScreen({navigation, route}: Props) {
   const session = useScanSession();
+  const insets = useSafeAreaInsets();
   const {rawUri, pageId: editingPageId} = route.params;
   const {width: screenWidth, height: screenHeight} = useWindowDimensions();
 
@@ -68,7 +70,7 @@ export default function TrimPageScreen({navigation, route}: Props) {
       `file://${rawUri.replace('file://', '')}`,
       (width, height) => {
         const maxW = screenWidth - 32;
-        const maxH = screenHeight - 320;
+        const maxH = screenHeight - 320 - insets.top - insets.bottom;
         const scale = Math.min(maxW / width, maxH / height);
         const dw = width * scale;
         const dh = height * scale;
@@ -191,7 +193,7 @@ export default function TrimPageScreen({navigation, route}: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.stage}>
+      <View style={[styles.stage, {paddingTop: 60 + insets.top}]}>
         {!corners ? (
           <ActivityIndicator color={colors.accent} size="large" />
         ) : (
@@ -227,7 +229,7 @@ export default function TrimPageScreen({navigation, route}: Props) {
         clipping tool later to adjust
       </Text>
 
-      <View style={styles.footer}>
+      <View style={[styles.footer, {paddingBottom: 28 + insets.bottom}]}>
         <TouchableOpacity
           style={styles.autoCropRow}
           onPress={handleAutoCropToggle}>
@@ -300,7 +302,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingTop: 60,
   },
   hint: {
     paddingHorizontal: 24,
@@ -311,7 +312,6 @@ const styles = StyleSheet.create({
   },
   footer: {
     paddingHorizontal: 20,
-    paddingBottom: 28,
     gap: 18,
   },
   autoCropRow: {

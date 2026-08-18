@@ -55,12 +55,14 @@ export function getFilterMatrix(filter: FilterType): number[] | null {
 /**
  * Amount for the native unsharp-mask pass (0 = skip it). The color matrix
  * filters are pure per-pixel tone adjustments and can't add or remove
- * sharpness on their own, but baking any filter means decoding and
- * re-encoding the JPEG, and that extra generation of lossy compression was
- * making scanned text look softer than the original capture — "Enhanced"
- * and "Clean" (the two document-clarity filters) get a real sharpen pass to
- * counteract that and make the text crisper than the original, not just as
- * sharp.
+ * sharpness on their own, but baking ANY filter means decoding and
+ * re-encoding the JPEG, and that extra generation of lossy compression makes
+ * scanned text look softer than the original capture — every filter gets a
+ * compensating sharpen pass so letters don't come out thinner/partially
+ * eroded than the original, not just "Enhanced"/"Clean". "B&W" in particular
+ * needs it: its high contrast() snaps already JPEG-softened pixels at the
+ * edge of a letter stroke toward white, which visibly erodes thin text —
+ * sharpening first restores those edges before contrast clips them.
  */
 export function getSharpenAmount(filter: FilterType): number {
   switch (filter) {
@@ -68,6 +70,10 @@ export function getSharpenAmount(filter: FilterType): number {
       return 0.4;
     case 'clean':
       return 0.25;
+    case 'bw':
+      return 0.3;
+    case 'grayscale':
+      return 0.2;
     default:
       return 0;
   }

@@ -10,11 +10,15 @@ import {
 } from 'react-native';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
 import {listDocuments, listPages} from '../db/database';
 import {DocumentSummary} from '../types/models';
 import {compressImage} from '../services/nativeImageFilter';
-import {buildPdfFromImages} from '../services/pdfExport';
+import {
+  buildPdfFromImages,
+  parsePageOcrBlocks,
+} from '../services/pdfExport';
 import {scanTimestampName, formatBytes} from '../utils/format';
 import {generateId} from '../utils/ids';
 import Icon from '../components/Icon';
@@ -39,6 +43,7 @@ type Status = 'idle' | 'working' | 'done' | 'error';
 export default function CompressionScreen() {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [selectedDoc, setSelectedDoc] = useState<DocumentSummary | null>(null);
   const [qualityKey, setQualityKey] = useState('medium');
@@ -81,6 +86,7 @@ export default function CompressionScreen() {
       const pdfPath = await buildPdfFromImages(
         compressedPaths,
         `${selectedDoc.name}_compressed_${scanTimestampName()}`,
+        pages.map(p => parsePageOcrBlocks(p.ocrBlocks)),
       );
       const stat = await RNFS.stat(pdfPath);
       setResultPath(pdfPath);
@@ -143,7 +149,7 @@ export default function CompressionScreen() {
       />
 
       {selectedDoc && (
-        <View style={styles.panel}>
+        <View style={[styles.panel, {paddingBottom: 16 + insets.bottom}]}>
           <Text style={styles.panelLabel}>Quality</Text>
           <View style={styles.qualityRow}>
             {QUALITY_OPTIONS.map(option => {

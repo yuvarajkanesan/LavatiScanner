@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import Share from 'react-native-share';
 import {captureRef} from 'react-native-view-shot';
@@ -29,6 +30,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Collage'>;
 export default function CollageScreen({route}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [selectedDocId, setSelectedDocId] = useState<string | null>(null);
   const [docPages, setDocPages] = useState<Page[]>([]);
@@ -202,7 +204,7 @@ export default function CollageScreen({route}: Props) {
         )}
       </View>
 
-      <View style={styles.actionBar}>
+      <View style={[styles.actionBar, {paddingBottom: 16 + insets.bottom}]}>
         <TouchableOpacity
           style={[
             styles.actionButton,
@@ -360,8 +362,7 @@ const createStyles = (colors: AppColors) =>
     },
     actionBar: {
       flexDirection: 'row',
-      padding: 16,
-      paddingTop: 0,
+      paddingHorizontal: 16,
       gap: 10,
     },
     actionButton: {

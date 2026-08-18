@@ -4,7 +4,7 @@ import Icon from './Icon';
 import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { DocumentSummary } from '../types/models';
-import { formatDate } from '../utils/format';
+import { formatBytes, formatDate, formatTime } from '../utils/format';
 
 interface Props {
   document: DocumentSummary;
@@ -47,8 +47,10 @@ export default function DocumentListRow({
         <Text style={styles.name} numberOfLines={1}>
           {document.name}
         </Text>
-        <Text style={styles.meta}>
-          {document.pageCount} page{document.pageCount === 1 ? '' : 's'} · {formatDate(document.updatedAt)}
+        <Text style={styles.meta} numberOfLines={1}>
+          {document.pageCount} page{document.pageCount === 1 ? '' : 's'} |{' '}
+          {formatDate(document.updatedAt)} | {formatTime(document.updatedAt)} |{' '}
+          {formatBytes(document.totalSizeBytes)}
         </Text>
       </View>
       {!selectionMode && <Icon name="chevron-right" size={22} color={colors.textMuted} />}

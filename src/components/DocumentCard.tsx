@@ -4,7 +4,7 @@ import Icon from './Icon';
 import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { DocumentSummary } from '../types/models';
-import { formatDate } from '../utils/format';
+import { formatBytes, formatDate, formatTime } from '../utils/format';
 import { PercentWidth } from '../utils/responsive';
 
 interface Props {
@@ -56,7 +56,11 @@ export default function DocumentCard({
       <Text style={styles.name} numberOfLines={1}>
         {document.name}
       </Text>
-      <Text style={styles.date}>{formatDate(document.updatedAt)}</Text>
+      <Text style={styles.date} numberOfLines={1}>
+        {document.pageCount} page{document.pageCount === 1 ? '' : 's'} |{' '}
+        {formatDate(document.updatedAt)} | {formatTime(document.updatedAt)} |{' '}
+        {formatBytes(document.totalSizeBytes)}
+      </Text>
     </TouchableOpacity>
   );
 }

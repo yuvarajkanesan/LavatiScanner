@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import DraggableFlatList, {
   RenderItemParams,
@@ -50,6 +51,7 @@ interface QueueItem {
 export default function PdfMergeScreen({navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [addingPdf, setAddingPdf] = useState(false);
@@ -372,7 +374,7 @@ export default function PdfMergeScreen({navigation}: Props) {
           );
         }}
       />
-      <View style={styles.actionBar}>
+      <View style={[styles.actionBar, {paddingBottom: 14 + insets.bottom}]}>
         <TouchableOpacity
           style={[
             styles.mergeButton,

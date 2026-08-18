@@ -33,9 +33,13 @@ import {
   listFolders,
   listPages,
   moveDocumentToFolder,
+  searchDocumentsByText,
 } from '../db/database';
 import {copyPageFile, deleteDocumentFiles} from '../services/fileStorage';
-import {buildPdfFromImages} from '../services/pdfExport';
+import {
+  buildPdfFromImages,
+  parsePageOcrBlocks,
+} from '../services/pdfExport';
 import DocumentCard from '../components/DocumentCard';
 import DocumentListRow from '../components/DocumentListRow';
 import FolderPickerModal from '../components/FolderPickerModal';
@@ -131,6 +135,9 @@ export default function HomeScreen({navigation}: Props) {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
+  const [contentMatchIds, setContentMatchIds] = useState<Set<string>>(
+    new Set(),
+  );
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [sortMode, setSortMode] = useState<SortMode>('modified_desc');
   const [viewSheetVisible, setViewSheetVisible] = useState(false);
@@ -160,6 +167,29 @@ export default function HomeScreen({navigation}: Props) {
     });
   }, []);
 
+  // Full-text search: matches document *content* (OCR'd page text), unioned
+  // with the plain in-memory name filter below. Debounced since (unlike the
+  // name filter) each keystroke now means a real DB query.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) {
+      setContentMatchIds(new Set());
+      return;
+    }
+    let cancelled = false;
+    const timeout = setTimeout(() => {
+      searchDocumentsByText(q).then(matches => {
+        if (!cancelled) {
+          setContentMatchIds(new Set(matches.map(d => d.id)));
+        }
+      });
+    }, 200);
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [query]);
+
   function applyView(next: string) {
     setViewMode(next as ViewMode);
     AsyncStorage.setItem(VIEW_MODE_KEY, next);
@@ -173,7 +203,9 @@ export default function HomeScreen({navigation}: Props) {
   const filteredDocuments = useMemo(() => {
     const q = query.trim().toLowerCase();
     const base = q
-      ? documents.filter(d => d.name.toLowerCase().includes(q))
+      ? documents.filter(
+          d => d.name.toLowerCase().includes(q) || contentMatchIds.has(d.id),
+        )
       : documents;
     const sorted = [...base];
     switch (sortMode) {
@@ -197,7 +229,7 @@ export default function HomeScreen({navigation}: Props) {
         break;
     }
     return sorted;
-  }, [documents, query, sortMode]);
+  }, [documents, query, sortMode, contentMatchIds]);
 
   const folderSections = useMemo<FolderSection[]>(() => {
     const byFolder = new Map<string | null, DocumentSummary[]>();
@@ -401,6 +433,7 @@ export default function HomeScreen({navigation}: Props) {
         const pdfPath = await buildPdfFromImages(
           pages.map(p => p.filePath),
           doc.name,
+          pages.map(p => parsePageOcrBlocks(p.ocrBlocks)),
         );
         urls.push(`file://${pdfPath}`);
       }
@@ -424,9 +457,11 @@ export default function HomeScreen({navigation}: Props) {
     try {
       setBulkBusy('merge');
       const allFilePaths: string[] = [];
+      const allOcrBlocks: ReturnType<typeof parsePageOcrBlocks>[] = [];
       for (const doc of selectedDocuments) {
         const pages = await listPages(doc.id);
         allFilePaths.push(...pages.map(p => p.filePath));
+        allOcrBlocks.push(...pages.map(p => parsePageOcrBlocks(p.ocrBlocks)));
       }
       if (allFilePaths.length === 0) {
         Alert.alert(
@@ -438,6 +473,7 @@ export default function HomeScreen({navigation}: Props) {
       const pdfPath = await buildPdfFromImages(
         allFilePaths,
         `Merged_${scanTimestampName()}`,
+        allOcrBlocks,
       );
       await Share.open({
         url: `file://${pdfPath}`,

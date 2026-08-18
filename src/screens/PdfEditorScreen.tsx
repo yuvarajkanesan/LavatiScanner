@@ -9,6 +9,7 @@ import {
   View,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import DraggableFlatList, {
   RenderItemParams,
@@ -49,6 +50,7 @@ type Props = NativeStackScreenProps<RootStackParamList, 'PdfEditor'>;
 export default function PdfEditorScreen({route, navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   const [fileName, setFileName] = useState<string | null>(null);
   const [pages, setPages] = useState<EditorPage[]>([]);
   const [loading, setLoading] = useState(false);
@@ -549,7 +551,7 @@ export default function PdfEditorScreen({route, navigation}: Props) {
         </Text>
       )}
 
-      <View style={styles.actionBar}>
+      <View style={[styles.actionBar, {paddingBottom: 14 + insets.bottom}]}>
         <EditorActionButton
           icon="content-save-move-outline"
           family="community"
@@ -586,7 +588,7 @@ export default function PdfEditorScreen({route, navigation}: Props) {
         onRequestClose={() => setPreviewPage(null)}>
         <View style={styles.previewBackdrop}>
           <TouchableOpacity
-            style={styles.previewClose}
+            style={[styles.previewClose, {top: 20 + insets.top}]}
             onPress={() => setPreviewPage(null)}
             hitSlop={10}>
             <Icon name="close" size={26} color={colors.white} />

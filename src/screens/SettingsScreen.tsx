@@ -22,14 +22,10 @@ import {
   isBiometricUnlockEnabled,
 } from '../services/biometrics';
 import {clearExportsCache, getStorageUsageBytes} from '../services/fileStorage';
-import {getMyEmail, setMyEmail} from '../services/userSettings';
 import {formatBytes} from '../utils/format';
-import {promptForText} from '../utils/promptForText';
 import Icon from '../components/Icon';
 import PinPad from '../components/PinPad';
 import ScreenBackground from '../components/ScreenBackground';
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 type Props = TabScreenProps<'Settings'>;
 
@@ -57,14 +53,12 @@ export default function SettingsScreen({navigation}: Props) {
   const [biometryLabel, setBiometryLabel] = useState<string | null>(null);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricBusy, setBiometricBusy] = useState(false);
-  const [myEmail, setMyEmailState] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setPinIsSet(await hasPin());
     setStorageBytes(await getStorageUsageBytes());
     setBiometryLabel(await getBiometryLabel());
     setBiometricEnabled(await isBiometricUnlockEnabled());
-    setMyEmailState(await getMyEmail());
   }, []);
 
   useFocusEffect(
@@ -152,20 +146,6 @@ export default function SettingsScreen({navigation}: Props) {
       await disableBiometricUnlock();
     }
     setBiometricBusy(false);
-    load();
-  }
-
-  async function handleEditMyEmail() {
-    const value = await promptForText('My email', myEmail ?? '');
-    if (value === null) {
-      return;
-    }
-    const trimmed = value.trim();
-    if (trimmed && !EMAIL_PATTERN.test(trimmed)) {
-      Alert.alert('Invalid email', 'Enter a valid email address.');
-      return;
-    }
-    await setMyEmail(trimmed || null);
     load();
   }
 
@@ -272,14 +252,6 @@ export default function SettingsScreen({navigation}: Props) {
             }}
           />
         )}
-      </Section>
-
-      <Section title="Sharing">
-        <Row
-          icon="alternate-email"
-          label={myEmail ? `My email: ${myEmail}` : 'Set my email'}
-          onPress={handleEditMyEmail}
-        />
       </Section>
 
       <Section title="Storage">

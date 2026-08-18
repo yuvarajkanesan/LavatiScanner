@@ -26,7 +26,7 @@ export const documentFeatureIcons: Record<
   | 'editPdf'
   | 'rotate'
   | 'collage'
-  | 'emailMyself'
+  | 'shareEmail'
   | 'duplicate'
   | 'moveFolder'
   | 'crop'
@@ -67,7 +67,7 @@ export const documentFeatureIcons: Record<
   },
   rotate: {icon: 'rotate-right', family: 'community', color: '#0891B2'},
   collage: {icon: 'view-grid-outline', family: 'community', color: '#F97316'},
-  emailMyself: {icon: 'email-outline', family: 'community', color: '#0EA5E9'},
+  shareEmail: {icon: 'email-send-outline', family: 'community', color: '#0EA5E9'},
   duplicate: {icon: 'content-copy', family: 'community', color: '#8B5CF6'},
   moveFolder: {
     icon: 'folder-move-outline',
