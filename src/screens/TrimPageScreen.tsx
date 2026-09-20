@@ -177,7 +177,9 @@ export default function TrimPageScreen({navigation, route}: Props) {
         session.updatePage(editingPageId, {rawUri: `file://${warpedPath}`});
         navigation.replace('Filter', {pageId: editingPageId});
       } else {
-        const pageId = session.addPage(`file://${warpedPath}`);
+        // Freshly captured pages default to the "Clean" scanner look (white
+        // paper, dark text) instead of the untouched photo.
+        const pageId = session.addPage(`file://${warpedPath}`, 'clean');
         navigation.replace('Filter', {pageId});
       }
     } catch (error) {

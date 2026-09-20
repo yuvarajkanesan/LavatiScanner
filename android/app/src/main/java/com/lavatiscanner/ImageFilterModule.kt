@@ -8,6 +8,7 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.media.ExifInterface
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -41,20 +42,64 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
    * camera.
    */
   private fun decodeSampledBitmap(path: String, maxDimension: Int): Bitmap {
-    if (maxDimension <= 0) {
-      return BitmapFactory.decodeFile(path)
-          ?: throw IllegalStateException("Could not decode image at $path")
+    val decoded =
+        if (maxDimension <= 0) {
+          BitmapFactory.decodeFile(path)
+        } else {
+          val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+          BitmapFactory.decodeFile(path, bounds)
+          var sampleSize = 1
+          while (bounds.outWidth / (sampleSize * 2) >= maxDimension &&
+              bounds.outHeight / (sampleSize * 2) >= maxDimension) {
+            sampleSize *= 2
+          }
+          BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sampleSize })
+        } ?: throw IllegalStateException("Could not decode image at $path")
+    return applyExifOrientation(path, decoded)
+  }
+
+  /**
+   * BitmapFactory ignores the JPEG's EXIF orientation tag, but the rest of the
+   * app (React Native's Image, and therefore the Trim screen's crop-corner
+   * coordinates) sees the photo already rotated upright. Camera photos are
+   * stored sensor-landscape (e.g. 4080x3060) with an "orientation 6" tag, so
+   * without this the native warp/filter would work on a sideways bitmap
+   * while being handed upright coordinates - sampling the wrong region and
+   * leaving the rest of the output white (only part of the page comes out).
+   */
+  private fun applyExifOrientation(path: String, bitmap: Bitmap): Bitmap {
+    val orientation =
+        try {
+          ExifInterface(path)
+              .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+        } catch (e: Exception) {
+          ExifInterface.ORIENTATION_NORMAL
+        }
+    val matrix = Matrix()
+    when (orientation) {
+      ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.setScale(-1f, 1f)
+      ExifInterface.ORIENTATION_ROTATE_180 -> matrix.setRotate(180f)
+      ExifInterface.ORIENTATION_FLIP_VERTICAL -> {
+        matrix.setRotate(180f)
+        matrix.postScale(-1f, 1f)
+      }
+      ExifInterface.ORIENTATION_TRANSPOSE -> {
+        matrix.setRotate(90f)
+        matrix.postScale(-1f, 1f)
+      }
+      ExifInterface.ORIENTATION_ROTATE_90 -> matrix.setRotate(90f)
+      ExifInterface.ORIENTATION_TRANSVERSE -> {
+        matrix.setRotate(-90f)
+        matrix.postScale(-1f, 1f)
+      }
+      ExifInterface.ORIENTATION_ROTATE_270 -> matrix.setRotate(-90f)
+      else -> return bitmap
     }
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(path, bounds)
-    var sampleSize = 1
-    while (bounds.outWidth / (sampleSize * 2) >= maxDimension &&
-        bounds.outHeight / (sampleSize * 2) >= maxDimension) {
-      sampleSize *= 2
+    val oriented = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+    if (oriented !== bitmap) {
+      bitmap.recycle()
     }
-    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-    return BitmapFactory.decodeFile(path, options)
-        ?: throw IllegalStateException("Could not decode image at $path")
+    return oriented
   }
 
   @ReactMethod
@@ -172,9 +217,7 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
     Thread {
       try {
         val cleanInput = inputPath.removePrefix("file://")
-        val srcBitmap =
-            BitmapFactory.decodeFile(cleanInput)
-                ?: throw IllegalStateException("Could not decode image at $cleanInput")
+        val srcBitmap = decodeSampledBitmap(cleanInput, 0)
 
         val src = FloatArray(8)
         for (i in 0 until 8) {

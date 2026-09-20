@@ -26,7 +26,7 @@ interface ScanSessionState {
 interface ScanSessionContextValue extends ScanSessionState {
   startSession: (folderId?: string | null) => void;
   startAppendSession: (docId: string) => void;
-  addPage: (rawUri: string) => string;
+  addPage: (rawUri: string, filter?: FilterType) => string;
   setPageFilter: (pageId: string, filter: FilterType) => void;
   updatePage: (pageId: string, updates: Partial<Pick<SessionPage, 'rawUri' | 'filter'>>) => void;
   removePage: (pageId: string) => void;
@@ -59,11 +59,14 @@ export function ScanSessionProvider({ children }: { children: React.ReactNode })
     setPages([]);
   }, []);
 
-  const addPage = useCallback((rawUri: string) => {
-    const id = generateId();
-    setPages(prev => [...prev, { id, rawUri, filter: 'original' }]);
-    return id;
-  }, []);
+  const addPage = useCallback(
+    (rawUri: string, filter: FilterType = 'original') => {
+      const id = generateId();
+      setPages(prev => [...prev, { id, rawUri, filter }]);
+      return id;
+    },
+    [],
+  );
 
   const setPageFilter = useCallback((pageId: string, filter: FilterType) => {
     setPages(prev =>
