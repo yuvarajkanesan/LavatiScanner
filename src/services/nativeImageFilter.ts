@@ -126,6 +126,29 @@ export interface QuadCorners {
 }
 
 /**
+ * Finds the page/book in a photo and returns its four corners as 0..1
+ * fractions of the (upright) image, or null when nothing document-like
+ * stands out - the caller then keeps its default full-frame crop.
+ */
+export async function detectDocumentCorners(
+  sourceUri: string,
+): Promise<QuadCorners | null> {
+  const cleanSource = sourceUri.replace('file://', '');
+  const flat: number[] | null = await ImageFilterModule.detectDocumentCorners(
+    cleanSource,
+  );
+  if (!flat || flat.length !== 8) {
+    return null;
+  }
+  return {
+    topLeft: {x: flat[0], y: flat[1]},
+    topRight: {x: flat[2], y: flat[3]},
+    bottomRight: {x: flat[4], y: flat[5]},
+    bottomLeft: {x: flat[6], y: flat[7]},
+  };
+}
+
+/**
  * Straightens a document photographed at an angle: warps the quadrilateral
  * given by `corners` (in the source image's own pixel space, top-left
  * origin) onto a clean rectangle via the native `warpPerspective` module

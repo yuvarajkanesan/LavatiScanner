@@ -32,6 +32,11 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
 
   override fun getName() = "ImageFilterModule"
 
+  private companion object {
+    /** Longest side (px) the document detector works at - plenty to find a page's edges, cheap to scan. */
+    const val DETECT_SIZE = 400
+  }
+
   /**
    * Decodes at full resolution when `maxDimension <= 0` (the real "bake to file"
    * path, which needs full quality), otherwise decodes pre-downsampled via
@@ -270,6 +275,482 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         promise.reject("IMAGE_WARP_ERROR", e.message, e)
       }
     }.start()
+  }
+
+  /**
+   * Finds the document (page / book) in a photo without OpenCV: downscale,
+   * blur, split bright vs dark with Otsu's threshold, take the largest
+   * connected blob (paper is normally the biggest bright region against a
+   * darker desk), and read its four corners off the blob's extreme points
+   * along the two diagonals. Resolves with 8 numbers - tl, tr, br, bl as
+   * (x, y) fractions 0..1 of the upright image - or null when nothing
+   * document-like stands out (e.g. white paper on a white desk), in which
+   * case the caller keeps its default full-frame crop.
+   */
+  @ReactMethod
+  fun detectDocumentCorners(inputPath: String, promise: Promise) {
+    Thread {
+      try {
+        val cleanInput = inputPath.removePrefix("file://")
+        val decoded = decodeSampledBitmap(cleanInput, DETECT_SIZE)
+        val scale = DETECT_SIZE.toFloat() / max(decoded.width, decoded.height)
+        val small =
+            if (scale < 1f) {
+              Bitmap.createScaledBitmap(
+                  decoded,
+                  max(1, (decoded.width * scale).toInt()),
+                  max(1, (decoded.height * scale).toInt()),
+                  true)
+            } else {
+              decoded
+            }
+        if (small !== decoded) {
+          decoded.recycle()
+        }
+        val w = small.width
+        val h = small.height
+        val px = IntArray(w * h)
+        small.getPixels(px, 0, w, 0, 0, w, h)
+        small.recycle()
+
+        val gray = IntArray(w * h)
+        for (i in px.indices) {
+          val p = px[i]
+          gray[i] =
+              (((p shr 16) and 0xFF) * 299 + ((p shr 8) and 0xFF) * 587 + (p and 0xFF) * 114) / 1000
+        }
+        val blurred = boxBlur(boxBlur(gray, w, h, 2), w, h, 2)
+
+        val quad = findBestDocumentQuad(blurred, w, h)
+        if (quad == null) {
+          promise.resolve(null)
+        } else {
+          val result = com.facebook.react.bridge.Arguments.createArray()
+          for (v in quad) {
+            result.pushDouble(v.toDouble())
+          }
+          promise.resolve(result)
+        }
+      } catch (e: Exception) {
+        promise.reject("DOC_DETECT_ERROR", e.message, e)
+      }
+    }.start()
+  }
+
+  private fun boxBlur(src: IntArray, w: Int, h: Int, r: Int): IntArray {
+    val div = 2 * r + 1
+    val tmp = IntArray(w * h)
+    for (y in 0 until h) {
+      val row = y * w
+      var sum = 0
+      for (x in -r..r) {
+        sum += src[row + x.coerceIn(0, w - 1)]
+      }
+      for (x in 0 until w) {
+        tmp[row + x] = sum / div
+        sum += src[row + (x + r + 1).coerceAtMost(w - 1)] - src[row + (x - r).coerceAtLeast(0)]
+      }
+    }
+    val out = IntArray(w * h)
+    for (x in 0 until w) {
+      var sum = 0
+      for (y in -r..r) {
+        sum += tmp[y.coerceIn(0, h - 1) * w + x]
+      }
+      for (y in 0 until h) {
+        out[y * w + x] = sum / div
+        sum +=
+            tmp[(y + r + 1).coerceAtMost(h - 1) * w + x] - tmp[(y - r).coerceAtLeast(0) * w + x]
+      }
+    }
+    return out
+  }
+
+  private fun otsuThreshold(gray: IntArray): Int {
+    val hist = IntArray(256)
+    for (v in gray) {
+      hist[v.coerceIn(0, 255)]++
+    }
+    val total = gray.size
+    var sumAll = 0L
+    for (i in 0..255) {
+      sumAll += i.toLong() * hist[i]
+    }
+    var sumB = 0L
+    var weightB = 0
+    var best = 0.0
+    var threshold = 128
+    for (t in 0..255) {
+      weightB += hist[t]
+      if (weightB == 0) continue
+      val weightF = total - weightB
+      if (weightF == 0) break
+      sumB += t.toLong() * hist[t]
+      val meanB = sumB.toDouble() / weightB
+      val meanF = (sumAll - sumB).toDouble() / weightF
+      val between = weightB.toDouble() * weightF * (meanB - meanF) * (meanB - meanF)
+      if (between > best) {
+        best = between
+        threshold = t
+      }
+    }
+    return threshold
+  }
+
+  private class DocCandidate(
+      val score: Float,
+      val frac: Float,
+      val quad: FloatArray,
+      val cx: Float,
+      val cy: Float
+  )
+
+  /**
+   * Picks the best page/book outline across several brightness thresholds and
+   * both polarities (bright page on darker desk, dark page on lighter desk).
+   * Every candidate is scored on how rectangular the blob is and - crucially -
+   * whether a real brightness step exists along each of its four sides, so a
+   * shadow across the page, an uneven desk or a distant bright window can't
+   * win. Returns tl,tr,br,bl as 8 fractions, or null when nothing convincing
+   * stands out (caller keeps the full-frame crop rather than guessing).
+   */
+  private fun findBestDocumentQuad(gray: IntArray, w: Int, h: Int): FloatArray? {
+    val base = otsuThreshold(gray)
+    val closeRadius = max(3, (kotlin.math.min(w, h) * 0.02f).toInt())
+    var best: DocCandidate? = null
+    for (delta in intArrayOf(-30, -15, 0, 12)) {
+      for (bright in booleanArrayOf(true, false)) {
+        val c = documentCandidate(gray, w, h, base + delta, bright, closeRadius) ?: continue
+        val b = best
+        if (b == null ||
+            c.score > b.score + 0.04f ||
+            (kotlin.math.abs(c.score - b.score) <= 0.04f && c.frac > b.frac)) {
+          best = c
+        }
+      }
+    }
+    val chosen = best ?: return null
+    if (chosen.score < 0.55f) return null
+
+    // Expand ~2% outward so the crop sits just outside the paper edge instead of clipping it.
+    val k = 0.02f
+    val out = FloatArray(8)
+    for (i in 0 until 4) {
+      val x = chosen.quad[i * 2] + (chosen.quad[i * 2] - chosen.cx) * k
+      val y = chosen.quad[i * 2 + 1] + (chosen.quad[i * 2 + 1] - chosen.cy) * k
+      out[i * 2] = (x / (w - 1)).coerceIn(0f, 1f)
+      out[i * 2 + 1] = (y / (h - 1)).coerceIn(0f, 1f)
+    }
+    return out
+  }
+
+  private fun documentCandidate(
+      gray: IntArray,
+      w: Int,
+      h: Int,
+      threshold: Int,
+      bright: Boolean,
+      closeRadius: Int
+  ): DocCandidate? {
+    val total = w * h
+    val raw = ByteArray(total) { if (if (bright) gray[it] > threshold else gray[it] <= threshold) 1 else 0 }
+    val mask = closeMask(raw, w, h, closeRadius)
+
+    val labels = IntArray(total)
+    val stack = IntArray(total)
+    var nextLabel = 0
+    var bestLabel = 0
+    var bestArea = 0
+    for (start in 0 until total) {
+      if (mask[start].toInt() == 0 || labels[start] != 0) continue
+      nextLabel++
+      var sp = 0
+      stack[sp++] = start
+      labels[start] = nextLabel
+      var area = 0
+      while (sp > 0) {
+        val idx = stack[--sp]
+        area++
+        val x = idx % w
+        val y = idx / w
+        if (x > 0 && mask[idx - 1].toInt() != 0 && labels[idx - 1] == 0) {
+          labels[idx - 1] = nextLabel; stack[sp++] = idx - 1
+        }
+        if (x < w - 1 && mask[idx + 1].toInt() != 0 && labels[idx + 1] == 0) {
+          labels[idx + 1] = nextLabel; stack[sp++] = idx + 1
+        }
+        if (y > 0 && mask[idx - w].toInt() != 0 && labels[idx - w] == 0) {
+          labels[idx - w] = nextLabel; stack[sp++] = idx - w
+        }
+        if (y < h - 1 && mask[idx + w].toInt() != 0 && labels[idx + w] == 0) {
+          labels[idx + w] = nextLabel; stack[sp++] = idx + w
+        }
+      }
+      if (area > bestArea) {
+        bestArea = area
+        bestLabel = nextLabel
+      }
+    }
+    val frac = bestArea.toFloat() / total
+    if (bestLabel == 0 || frac < 0.10f || frac > 0.98f) return null
+
+    var best: DocCandidate? = null
+    for (quad in arrayOf(extremeQuad(labels, bestLabel, w, h), hullQuad(labels, bestLabel, w, h))) {
+      if (quad == null) continue
+      val quadArea = polygonArea(quad)
+      val quadFrac = quadArea / total
+      if (quadFrac < 0.12f || quadFrac > 0.9f) continue
+      val minSide = kotlin.math.min(w, h) * 0.1f
+      var tooShort = false
+      for (i in 0 until 4) {
+        val j = (i + 1) % 4
+        if (distance(quad[i * 2], quad[i * 2 + 1], quad[j * 2], quad[j * 2 + 1]) < minSide) {
+          tooShort = true
+        }
+      }
+      if (tooShort) continue
+
+      val rect = bestArea / quadArea
+      val cx = (quad[0] + quad[2] + quad[4] + quad[6]) / 4f
+      val cy = (quad[1] + quad[3] + quad[5] + quad[7]) / 4f
+      val polarity = if (bright) 1f else -1f
+      var sideSum = 0f
+      var sideMin = Float.MAX_VALUE
+      for (i in 0 until 4) {
+        val j = (i + 1) % 4
+        val c = sideContrast(gray, w, h, quad[i * 2], quad[i * 2 + 1], quad[j * 2], quad[j * 2 + 1], cx, cy, polarity)
+        // A side that runs off-frame can't be checked - neutral, not free credit.
+        val s = if (c == null) 0.5f else (c / 40f).coerceIn(-0.5f, 1f)
+        sideSum += s
+        if (s < sideMin) sideMin = s
+      }
+      // No real brightness step along some side => this isn't a page edge.
+      if (sideMin < 0.25f) continue
+      val edge = 0.5f * (sideSum / 4f) + 0.5f * sideMin
+      val rect01 = ((rect - 0.6f) / 0.35f).coerceIn(0f, 1f)
+      val score = 0.4f * rect01 + 0.6f * edge.coerceIn(0f, 1f)
+      if (best == null || score > best.score) {
+        best = DocCandidate(score, frac, quad, cx, cy)
+      }
+    }
+    return best
+  }
+
+  /** Blob's four corners taken as the extreme points along both diagonals. */
+  private fun extremeQuad(labels: IntArray, label: Int, w: Int, h: Int): FloatArray? {
+    var minSum = Int.MAX_VALUE; var maxSum = Int.MIN_VALUE
+    var minDiff = Int.MAX_VALUE; var maxDiff = Int.MIN_VALUE
+    var tlX = 0; var tlY = 0; var brX = 0; var brY = 0
+    var trX = 0; var trY = 0; var blX = 0; var blY = 0
+    for (idx in 0 until w * h) {
+      if (labels[idx] != label) continue
+      val x = idx % w
+      val y = idx / w
+      val s = x + y
+      val d = x - y
+      if (s < minSum) { minSum = s; tlX = x; tlY = y }
+      if (s > maxSum) { maxSum = s; brX = x; brY = y }
+      if (d > maxDiff) { maxDiff = d; trX = x; trY = y }
+      if (d < minDiff) { minDiff = d; blX = x; blY = y }
+    }
+    return floatArrayOf(
+        tlX.toFloat(), tlY.toFloat(), trX.toFloat(), trY.toFloat(),
+        brX.toFloat(), brY.toFloat(), blX.toFloat(), blY.toFloat())
+  }
+
+  /**
+   * Smallest four-sided outline around the blob's convex hull: repeatedly
+   * drop the hull edge whose removal (extending its two neighbours until they
+   * meet) adds the least area. Unlike the extreme-point quad this recovers a
+   * page corner hidden by a dark logo/photo, since the truncating chord is
+   * exactly the cheapest edge to remove.
+   */
+  private fun hullQuad(labels: IntArray, label: Int, w: Int, h: Int): FloatArray? {
+    val xs = ArrayList<Int>()
+    val ys = ArrayList<Int>()
+    for (idx in 0 until w * h) {
+      if (labels[idx] != label) continue
+      val x = idx % w
+      val y = idx / w
+      val onEdge =
+          x == 0 || y == 0 || x == w - 1 || y == h - 1 ||
+              labels[idx - 1] != label || labels[idx + 1] != label ||
+              labels[idx - w] != label || labels[idx + w] != label
+      if (onEdge) {
+        xs.add(x)
+        ys.add(y)
+      }
+    }
+    if (xs.size < 4) return null
+    val order = (0 until xs.size).sortedWith(compareBy({ xs[it] }, { ys[it] }))
+    val px = FloatArray(order.size) { xs[order[it]].toFloat() }
+    val py = FloatArray(order.size) { ys[order[it]].toFloat() }
+
+    fun cross(ox: Float, oy: Float, ax: Float, ay: Float, bx: Float, by: Float) =
+        (ax - ox) * (by - oy) - (ay - oy) * (bx - ox)
+
+    val hullX = ArrayList<Float>()
+    val hullY = ArrayList<Float>()
+    // Andrew's monotone chain: lower hull then upper hull.
+    val lowerStart = 0
+    for (i in px.indices) {
+      while (hullX.size - lowerStart >= 2 &&
+          cross(hullX[hullX.size - 2], hullY[hullY.size - 2], hullX[hullX.size - 1], hullY[hullY.size - 1], px[i], py[i]) <= 0f) {
+        hullX.removeAt(hullX.size - 1); hullY.removeAt(hullY.size - 1)
+      }
+      hullX.add(px[i]); hullY.add(py[i])
+    }
+    val upperStart = hullX.size - 1
+    for (i in px.indices.reversed()) {
+      while (hullX.size - upperStart >= 2 &&
+          cross(hullX[hullX.size - 2], hullY[hullY.size - 2], hullX[hullX.size - 1], hullY[hullY.size - 1], px[i], py[i]) <= 0f) {
+        hullX.removeAt(hullX.size - 1); hullY.removeAt(hullY.size - 1)
+      }
+      hullX.add(px[i]); hullY.add(py[i])
+    }
+    hullX.removeAt(hullX.size - 1); hullY.removeAt(hullY.size - 1)
+    if (hullX.size < 4) return null
+
+    var vx = hullX.toFloatArray()
+    var vy = hullY.toFloatArray()
+
+    while (vx.size > 4) {
+      val n = vx.size
+      var bestAdded = Float.MAX_VALUE
+      var bestI = -1
+      var bestPx = 0f
+      var bestPy = 0f
+      for (i in 0 until n) {
+        val a = (i - 1 + n) % n
+        val b = i
+        val c = (i + 1) % n
+        val d = (i + 2) % n
+        // Intersection of line a->b with line c->d.
+        val rX = vx[b] - vx[a]; val rY = vy[b] - vy[a]
+        val sX = vx[d] - vx[c]; val sY = vy[d] - vy[c]
+        val den = rX * sY - rY * sX
+        if (kotlin.math.abs(den) < 1e-9f) continue
+        val t = ((vx[c] - vx[a]) * sY - (vy[c] - vy[a]) * sX) / den
+        val ix = vx[a] + t * rX
+        val iy = vy[a] + t * rY
+        // The new point must lie outside edge b->c, otherwise removing it would shrink the shape.
+        if (cross(vx[b], vy[b], vx[c], vy[c], ix, iy) * cross(vx[a], vy[a], vx[b], vy[b], vx[c], vy[c]) >= 0f) continue
+        val added = kotlin.math.abs(cross(vx[b], vy[b], ix, iy, vx[c], vy[c])) / 2f
+        if (added < bestAdded) {
+          bestAdded = added; bestI = i; bestPx = ix; bestPy = iy
+        }
+      }
+      if (bestI < 0) return null
+      val j = (bestI + 1) % n
+      val nx = ArrayList<Float>()
+      val ny = ArrayList<Float>()
+      for (k in 0 until n) {
+        when (k) {
+          bestI -> { nx.add(bestPx); ny.add(bestPy) }
+          j -> {}
+          else -> { nx.add(vx[k]); ny.add(vy[k]) }
+        }
+      }
+      vx = nx.toFloatArray()
+      vy = ny.toFloatArray()
+    }
+    if (vx.size != 4) return null
+
+    var tl = 0; var br = 0; var tr = 0; var bl = 0
+    for (i in 1 until 4) {
+      if (vx[i] + vy[i] < vx[tl] + vy[tl]) tl = i
+      if (vx[i] + vy[i] > vx[br] + vy[br]) br = i
+      if (vx[i] - vy[i] > vx[tr] - vy[tr]) tr = i
+      if (vx[i] - vy[i] < vx[bl] - vy[bl]) bl = i
+    }
+    if (setOf(tl, tr, br, bl).size < 4) return null
+    return floatArrayOf(vx[tl], vy[tl], vx[tr], vy[tr], vx[br], vy[br], vx[bl], vy[bl])
+  }
+
+  private fun polygonArea(q: FloatArray): Float {
+    var a = 0f
+    for (i in 0 until 4) {
+      val j = (i + 1) % 4
+      a += q[i * 2] * q[j * 2 + 1] - q[j * 2] * q[i * 2 + 1]
+    }
+    return kotlin.math.abs(a) / 2f
+  }
+
+  /** Median (inside - outside) brightness step along one quad side; null if the side lies off-frame. */
+  private fun sideContrast(
+      gray: IntArray,
+      w: Int,
+      h: Int,
+      x0: Float,
+      y0: Float,
+      x1: Float,
+      y1: Float,
+      cx: Float,
+      cy: Float,
+      polarity: Float
+  ): Float? {
+    val dx = x1 - x0
+    val dy = y1 - y0
+    val len = sqrt(dx * dx + dy * dy)
+    if (len < 1f) return null
+    var nx = dy / len
+    var ny = -dx / len
+    val mx = (x0 + x1) / 2f
+    val my = (y0 + y1) / 2f
+    if ((cx - mx) * nx + (cy - my) * ny > 0f) { // make the normal point outward
+      nx = -nx; ny = -ny
+    }
+    fun at(x: Float, y: Float): Int {
+      val xi = Math.round(x)
+      val yi = Math.round(y)
+      return if (xi < 0 || yi < 0 || xi >= w || yi >= h) -1 else gray[yi * w + xi]
+    }
+    val values = ArrayList<Float>()
+    val samples = 24
+    for (k in 1..samples) {
+      val t = k / (samples + 1f)
+      val x = x0 + dx * t
+      val y = y0 + dy * t
+      val in1 = at(x - nx * 4f, y - ny * 4f)
+      val in2 = at(x - nx * 7f, y - ny * 7f)
+      val out1 = at(x + nx * 4f, y + ny * 4f)
+      val out2 = at(x + nx * 7f, y + ny * 7f)
+      if (in1 < 0 || in2 < 0 || out1 < 0 || out2 < 0) continue
+      values.add(polarity * ((in1 + in2) / 2f - (out1 + out2) / 2f))
+    }
+    if (values.size < 5) return null
+    values.sort()
+    val m = values.size / 2
+    return if (values.size % 2 == 1) values[m] else (values[m - 1] + values[m]) / 2f
+  }
+
+  /** Binary closing (dilate then erode) with a square window, edge-replicated, via prefix sums. */
+  private fun closeMask(mask: ByteArray, w: Int, h: Int, r: Int): ByteArray {
+    fun pass(src: ByteArray, horizontal: Boolean, needAll: Boolean): ByteArray {
+      val out = ByteArray(w * h)
+      val n = 2 * r + 1
+      val lineCount = if (horizontal) h else w
+      val len = if (horizontal) w else h
+      val pre = IntArray(len + 1)
+      for (line in 0 until lineCount) {
+        fun idx(i: Int) = if (horizontal) line * w + i else i * w + line
+        for (i in 0 until len) pre[i + 1] = pre[i] + src[idx(i)]
+        val first = src[idx(0)].toInt()
+        val last = src[idx(len - 1)].toInt()
+        for (i in 0 until len) {
+          var lo = i - r
+          var hi = i + r
+          var cnt = 0
+          if (lo < 0) { cnt += (-lo) * first; lo = 0 }
+          if (hi > len - 1) { cnt += (hi - (len - 1)) * last; hi = len - 1 }
+          cnt += pre[hi + 1] - pre[lo]
+          out[idx(i)] = if (if (needAll) cnt == n else cnt > 0) 1 else 0
+        }
+      }
+      return out
+    }
+    val dilated = pass(pass(mask, true, false), false, false)
+    return pass(pass(dilated, true, true), false, true)
   }
 
   private fun distance(x1: Float, y1: Float, x2: Float, y2: Float): Float {

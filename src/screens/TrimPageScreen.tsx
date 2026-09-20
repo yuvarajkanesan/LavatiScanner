@@ -16,7 +16,10 @@ import Alert from '../utils/customAlert';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
-import {warpPerspective} from '../services/nativeImageFilter';
+import {
+  detectDocumentCorners,
+  warpPerspective,
+} from '../services/nativeImageFilter';
 import {generateId} from '../utils/ids';
 import {colors} from '../theme/colors';
 
@@ -54,6 +57,11 @@ export default function TrimPageScreen({navigation, route}: Props) {
   const cornersRef = useRef<Corners | null>(null);
   const displayRef = useRef({width: 0, height: 0});
   const startCorner = useRef<Point | null>(null);
+  // Auto-detected page/book corners (display space), and whether the user
+  // has since dragged a handle - detection finishing late must never
+  // overwrite a manual adjustment.
+  const detectedRef = useRef<Corners | null>(null);
+  const userEditedRef = useRef(false);
 
   function updateCorners(next: Corners) {
     cornersRef.current = next;
@@ -84,6 +92,29 @@ export default function TrimPageScreen({navigation, route}: Props) {
           br: {x: dw - insetX, y: dh - insetY},
           bl: {x: insetX, y: dh - insetY},
         });
+        detectedRef.current = null;
+        userEditedRef.current = false;
+        if (!editingPageId) {
+          detectDocumentCorners(rawUri)
+            .then(found => {
+              if (!found) {
+                return;
+              }
+              const detected: Corners = {
+                tl: {x: found.topLeft.x * dw, y: found.topLeft.y * dh},
+                tr: {x: found.topRight.x * dw, y: found.topRight.y * dh},
+                br: {x: found.bottomRight.x * dw, y: found.bottomRight.y * dh},
+                bl: {x: found.bottomLeft.x * dw, y: found.bottomLeft.y * dh},
+              };
+              detectedRef.current = detected;
+              if (!userEditedRef.current) {
+                updateCorners(detected);
+              }
+            })
+            .catch(() => {
+              // Detection is a best-effort nicety - keep the full-frame crop.
+            });
+        }
       },
       () => {
         Alert.alert('Could not open image', 'This page could not be loaded.');
@@ -115,6 +146,7 @@ export default function TrimPageScreen({navigation, route}: Props) {
         const x = clamp(start.x + gesture.dx, 0, dw);
         const y = clamp(start.y + gesture.dy, 0, dh);
         updateCorners({...current, [key]: {x, y}});
+        userEditedRef.current = true;
         setAutoCrop(false);
       },
     });
@@ -127,15 +159,21 @@ export default function TrimPageScreen({navigation, route}: Props) {
 
   function handleAutoCropToggle() {
     if (!autoCrop && display.width > 0) {
-      // Re-enabling snaps back to the full frame.
-      const insetX = display.width * INSET_RATIO;
-      const insetY = display.height * INSET_RATIO;
-      updateCorners({
-        tl: {x: insetX, y: insetY},
-        tr: {x: display.width - insetX, y: insetY},
-        br: {x: display.width - insetX, y: display.height - insetY},
-        bl: {x: insetX, y: display.height - insetY},
-      });
+      // Re-enabling snaps back to the detected page/book edges, or the full
+      // frame when nothing document-like was found.
+      userEditedRef.current = false;
+      if (detectedRef.current) {
+        updateCorners(detectedRef.current);
+      } else {
+        const insetX = display.width * INSET_RATIO;
+        const insetY = display.height * INSET_RATIO;
+        updateCorners({
+          tl: {x: insetX, y: insetY},
+          tr: {x: display.width - insetX, y: insetY},
+          br: {x: display.width - insetX, y: display.height - insetY},
+          bl: {x: insetX, y: display.height - insetY},
+        });
+      }
     }
     setAutoCrop(v => !v);
   }
@@ -177,9 +215,9 @@ export default function TrimPageScreen({navigation, route}: Props) {
         session.updatePage(editingPageId, {rawUri: `file://${warpedPath}`});
         navigation.replace('Filter', {pageId: editingPageId});
       } else {
-        // Freshly captured pages default to the "Clean" scanner look (white
-        // paper, dark text) instead of the untouched photo.
-        const pageId = session.addPage(`file://${warpedPath}`, 'clean');
+        // Freshly captured pages default to the color-preserving "Enhanced"
+        // look instead of the untouched photo.
+        const pageId = session.addPage(`file://${warpedPath}`, 'enhanced');
         navigation.replace('Filter', {pageId});
       }
     } catch (error) {
