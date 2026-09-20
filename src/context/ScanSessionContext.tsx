@@ -16,6 +16,11 @@ interface ScanSessionState {
   pages: SessionPage[];
   /** When set, "Done" appends pages to this existing document instead of creating a new one. */
   targetDocId: string | null;
+  /** Whether the camera's "hold still to auto-capture" mode is on. Lives
+   * here (not local Capture-screen state) so it stays on across the
+   * Capture → Trim → Filter → "Add another page" loop for the whole
+   * multi-page session, instead of resetting on every page. */
+  autoCaptureEnabled: boolean;
 }
 
 interface ScanSessionContextValue extends ScanSessionState {
@@ -26,6 +31,7 @@ interface ScanSessionContextValue extends ScanSessionState {
   updatePage: (pageId: string, updates: Partial<Pick<SessionPage, 'rawUri' | 'filter'>>) => void;
   removePage: (pageId: string) => void;
   setDocName: (name: string) => void;
+  setAutoCaptureEnabled: (enabled: boolean) => void;
   reset: () => void;
 }
 
@@ -38,6 +44,7 @@ export function ScanSessionProvider({ children }: { children: React.ReactNode })
   const [folderId, setFolderId] = useState<string | null>(null);
   const [pages, setPages] = useState<SessionPage[]>([]);
   const [targetDocId, setTargetDocId] = useState<string | null>(null);
+  const [autoCaptureEnabled, setAutoCaptureEnabled] = useState(false);
 
   const startSession = useCallback((initialFolderId: string | null = null) => {
     setDocNameState(scanTimestampName());
@@ -92,6 +99,7 @@ export function ScanSessionProvider({ children }: { children: React.ReactNode })
       folderId,
       pages,
       targetDocId,
+      autoCaptureEnabled,
       startSession,
       startAppendSession,
       addPage,
@@ -99,6 +107,7 @@ export function ScanSessionProvider({ children }: { children: React.ReactNode })
       updatePage,
       removePage,
       setDocName,
+      setAutoCaptureEnabled,
       reset,
     }),
     [
@@ -106,6 +115,7 @@ export function ScanSessionProvider({ children }: { children: React.ReactNode })
       folderId,
       pages,
       targetDocId,
+      autoCaptureEnabled,
       startSession,
       startAppendSession,
       addPage,

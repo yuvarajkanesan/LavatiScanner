@@ -64,10 +64,10 @@ export default function Button({
   }));
 
   function handlePressIn() {
-    scale.value = withSpring(0.96, {damping: 15, stiffness: 400});
+    scale.value = withSpring(0.94, {damping: 14, stiffness: 380});
   }
   function handlePressOut() {
-    scale.value = withSpring(1, {damping: 15, stiffness: 400});
+    scale.value = withSpring(1, {damping: 8, stiffness: 260});
   }
 
   const dims = SIZES[size];

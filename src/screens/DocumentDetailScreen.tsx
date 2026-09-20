@@ -258,6 +258,9 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
   const [rotatingPageId, setRotatingPageId] = useState<string | null>(null);
   const [moreVisible, setMoreVisible] = useState(false);
   const [folderPickerVisible, setFolderPickerVisible] = useState(false);
+  const [pageSelectionMode, setPageSelectionMode] = useState(false);
+  const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
+  const [bulkDeletingPages, setBulkDeletingPages] = useState(false);
   const [moreBusy, setMoreBusy] = useState<
     | 'sharePdf'
     | 'shareImage'
@@ -320,6 +323,80 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     await deletePageRecord(page.id, docId);
     await deletePageFile(page.filePath);
     load();
+  }
+
+  function togglePageSelected(id: string) {
+    setSelectedPageIds(prev => {
+      const next = prev.includes(id)
+        ? prev.filter(x => x !== id)
+        : [...prev, id];
+      if (next.length === 0) {
+        setPageSelectionMode(false);
+      }
+      return next;
+    });
+  }
+
+  function handlePageCardPress(page: Page) {
+    if (pageSelectionMode) {
+      togglePageSelected(page.id);
+    } else {
+      setPreviewPage(page);
+    }
+  }
+
+  function handlePageCardLongPress(page: Page) {
+    if (pageSelectionMode) {
+      togglePageSelected(page.id);
+    } else {
+      setPageSelectionMode(true);
+      setSelectedPageIds([page.id]);
+    }
+  }
+
+  function handleSelectAllPages() {
+    if (selectedPageIds.length === pages.length) {
+      setSelectedPageIds([]);
+      setPageSelectionMode(false);
+    } else {
+      setSelectedPageIds(pages.map(p => p.id));
+    }
+  }
+
+  function handleCancelPageSelection() {
+    setPageSelectionMode(false);
+    setSelectedPageIds([]);
+  }
+
+  function handleBulkDeletePages() {
+    const count = selectedPageIds.length;
+    Alert.alert(
+      `Delete ${count} page${count === 1 ? '' : 's'}`,
+      "This can't be undone.",
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setBulkDeletingPages(true);
+            try {
+              const toDelete = pages.filter(p =>
+                selectedPageIds.includes(p.id),
+              );
+              for (const page of toDelete) {
+                await deletePageRecord(page.id, docId);
+                await deletePageFile(page.filePath);
+              }
+              handleCancelPageSelection();
+              await load();
+            } finally {
+              setBulkDeletingPages(false);
+            }
+          },
+        },
+      ],
+    );
   }
 
   async function handleMovePage(page: Page, direction: 'up' | 'down') {
@@ -826,63 +903,81 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
 
   return (
     <ScreenBackground>
-      <LinearGradient
-        colors={colors.gradientHero}
-        start={{x: 0, y: 0}}
-        end={{x: 1, y: 1}}
-        style={styles.hero}>
-        <FeatureBadge
-          icon="file-document-outline"
-          color={colors.accent}
-          size={46}
-          variant="glow"
-        />
-        <View style={styles.heroTextWrap}>
-          <TouchableOpacity
-            style={styles.titleRow}
-            onPress={handleRenameDoc}
-            activeOpacity={0.7}>
-            <Text style={styles.title} numberOfLines={1}>
-              {doc.name}
-            </Text>
-            <Icon
-              name={f.rename.icon}
-              family={f.rename.family}
-              size={15}
-              color={colors.accent}
-            />
+      {pageSelectionMode ? (
+        <View style={styles.selectionBar}>
+          <TouchableOpacity onPress={handleCancelPageSelection} hitSlop={8}>
+            <Icon name="close" size={24} color={colors.text} />
           </TouchableOpacity>
-          <View style={styles.subtitleRow}>
-            <Icon
-              name="file-multiple-outline"
-              family="community"
-              size={13}
-              color={colors.textMuted}
-            />
-            <Text style={styles.subtitle}>
-              {pages.length} page{pages.length === 1 ? '' : 's'}
+          <Text style={styles.selectionCount}>
+            {selectedPageIds.length} selected
+          </Text>
+          <TouchableOpacity onPress={handleSelectAllPages} hitSlop={8}>
+            <Text style={styles.selectAllText}>
+              {selectedPageIds.length === pages.length
+                ? 'Deselect All'
+                : 'Select All'}
             </Text>
-            <View style={styles.subtitleDot} />
-            <Text style={styles.subtitle}>{formatDate(doc.updatedAt)}</Text>
-          </View>
+          </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          style={styles.moreBtn}
-          onPress={() => setMoreVisible(true)}
-          disabled={moreBusy !== null}
-          hitSlop={8}>
-          {moreBusy !== null ? (
-            <ActivityIndicator color={colors.accent} size="small" />
-          ) : (
-            <Icon
-              name="more-vert"
-              family="material"
-              size={22}
-              color={colors.textMuted}
-            />
-          )}
-        </TouchableOpacity>
-      </LinearGradient>
+      ) : (
+        <LinearGradient
+          colors={colors.gradientHero}
+          start={{x: 0, y: 0}}
+          end={{x: 1, y: 1}}
+          style={styles.hero}>
+          <FeatureBadge
+            icon="file-document-outline"
+            color={colors.accent}
+            size={46}
+            variant="glow"
+          />
+          <View style={styles.heroTextWrap}>
+            <TouchableOpacity
+              style={styles.titleRow}
+              onPress={handleRenameDoc}
+              activeOpacity={0.7}>
+              <Text style={styles.title} numberOfLines={1}>
+                {doc.name}
+              </Text>
+              <Icon
+                name={f.rename.icon}
+                family={f.rename.family}
+                size={15}
+                color={colors.accent}
+              />
+            </TouchableOpacity>
+            <View style={styles.subtitleRow}>
+              <Icon
+                name="file-multiple-outline"
+                family="community"
+                size={13}
+                color={colors.textMuted}
+              />
+              <Text style={styles.subtitle}>
+                {pages.length} page{pages.length === 1 ? '' : 's'}
+              </Text>
+              <View style={styles.subtitleDot} />
+              <Text style={styles.subtitle}>{formatDate(doc.updatedAt)}</Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.moreBtn}
+            onPress={() => setMoreVisible(true)}
+            disabled={moreBusy !== null}
+            hitSlop={8}>
+            {moreBusy !== null ? (
+              <ActivityIndicator color={colors.accent} size="small" />
+            ) : (
+              <Icon
+                name="more-vert"
+                family="material"
+                size={22}
+                color={colors.textMuted}
+              />
+            )}
+          </TouchableOpacity>
+        </LinearGradient>
+      )}
 
       {pages.length === 0 ? (
         <View style={styles.empty}>
@@ -916,30 +1011,52 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
           contentContainerStyle={styles.list}
           renderItem={({item, index}) =>
             item.type === 'add' ? (
-              <TouchableOpacity
-                style={[styles.addTile, {width: pageCardWidthPercent}]}
-                onPress={handleAddPage}
-                activeOpacity={0.7}>
-                <Icon
-                  name={f.addPage.icon}
-                  family={f.addPage.family}
-                  size={26}
-                  color={colors.accent}
-                />
-                <Text style={styles.addTileText}>Add new pages</Text>
-              </TouchableOpacity>
+              pageSelectionMode ? null : (
+                <TouchableOpacity
+                  style={[styles.addTile, {width: pageCardWidthPercent}]}
+                  onPress={handleAddPage}
+                  activeOpacity={0.7}>
+                  <Icon
+                    name={f.addPage.icon}
+                    family={f.addPage.family}
+                    size={26}
+                    color={colors.accent}
+                  />
+                  <Text style={styles.addTileText}>Add new pages</Text>
+                </TouchableOpacity>
+              )
             ) : (
               <TouchableOpacity
                 style={[styles.pageCard, {width: pageCardWidthPercent}]}
                 activeOpacity={0.9}
-                onPress={() => setPreviewPage(item.page)}>
+                onPress={() => handlePageCardPress(item.page)}
+                onLongPress={() => handlePageCardLongPress(item.page)}>
                 <Image
                   source={{uri: `file://${item.page.filePath}`}}
                   style={styles.pageImage}
                   resizeMode="cover"
                 />
                 <View style={styles.pageScrim} pointerEvents="none" />
-                <View style={styles.pageBadge}>
+                {pageSelectionMode && (
+                  <View
+                    style={[
+                      styles.pageCheckCircle,
+                      selectedPageIds.includes(item.page.id) &&
+                        styles.pageCheckCircleSelected,
+                    ]}>
+                    {selectedPageIds.includes(item.page.id) && (
+                      <Icon name="check" size={14} color={colors.white} />
+                    )}
+                  </View>
+                )}
+                <View
+                  style={[
+                    styles.pageBadge,
+                    {
+                      backgroundColor:
+                        colors.funPalette[index % colors.funPalette.length],
+                    },
+                  ]}>
                   <Icon
                     name="file-document-outline"
                     family="community"
@@ -960,27 +1077,62 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
                     />
                   </View>
                 ) : null}
-                {rotatingPageId === item.page.id ? (
-                  <View style={styles.rotatingOverlay}>
-                    <ActivityIndicator color={colors.white} />
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.pageMenuBtn}
-                    onPress={() => setActivePage(item.page)}
-                    hitSlop={8}>
-                    <Icon
-                      name="dots-vertical"
-                      family="community"
-                      size={20}
-                      color={colors.white}
-                    />
-                  </TouchableOpacity>
-                )}
+                {!pageSelectionMode &&
+                  (rotatingPageId === item.page.id ? (
+                    <View style={styles.rotatingOverlay}>
+                      <ActivityIndicator color={colors.white} />
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.pageMenuBtn}
+                      onPress={() => setActivePage(item.page)}
+                      hitSlop={8}>
+                      <Icon
+                        name="dots-vertical"
+                        family="community"
+                        size={20}
+                        color={colors.white}
+                      />
+                    </TouchableOpacity>
+                  ))}
               </TouchableOpacity>
             )
           }
         />
+      )}
+
+      {pageSelectionMode && (
+        <View
+          style={[
+            styles.pageBulkBar,
+            {paddingBottom: 14 + insets.bottom},
+          ]}>
+          <TouchableOpacity
+            style={[
+              styles.pageBulkDeleteBtn,
+              (bulkDeletingPages || selectedPageIds.length === 0) &&
+                styles.pageBulkDeleteBtnDisabled,
+            ]}
+            onPress={handleBulkDeletePages}
+            disabled={bulkDeletingPages || selectedPageIds.length === 0}>
+            {bulkDeletingPages ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <>
+                <Icon
+                  name={f.delete.icon}
+                  family={f.delete.family}
+                  size={18}
+                  color={colors.white}
+                />
+                <Text style={styles.pageBulkDeleteText}>
+                  Delete {selectedPageIds.length} page
+                  {selectedPageIds.length === 1 ? '' : 's'}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
       )}
 
       <Modal
@@ -1167,6 +1319,26 @@ const createStyles = (colors: AppColors) =>
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
     },
+    selectionBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 18,
+      paddingTop: 16,
+      paddingBottom: 14,
+      borderBottomWidth: 1,
+      borderBottomColor: colors.border,
+    },
+    selectionCount: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    selectAllText: {
+      fontSize: 13,
+      fontWeight: '600',
+      color: colors.accent,
+    },
     heroTextWrap: {
       flex: 1,
     },
@@ -1305,6 +1477,47 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: 'rgba(0,0,0,0.55)',
       alignItems: 'center',
       justifyContent: 'center',
+    },
+    pageCheckCircle: {
+      position: 'absolute',
+      right: 8,
+      bottom: 8,
+      width: 22,
+      height: 22,
+      borderRadius: 11,
+      borderWidth: 2,
+      borderColor: colors.white,
+      backgroundColor: 'rgba(0,0,0,0.35)',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    pageCheckCircleSelected: {
+      backgroundColor: colors.accent,
+      borderColor: colors.accent,
+    },
+    pageBulkBar: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.background,
+    },
+    pageBulkDeleteBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      height: 48,
+      borderRadius: 12,
+      backgroundColor: colors.danger,
+    },
+    pageBulkDeleteBtnDisabled: {
+      opacity: 0.5,
+    },
+    pageBulkDeleteText: {
+      color: colors.white,
+      fontWeight: '700',
+      fontSize: 15,
     },
     noteBadge: {
       position: 'absolute',

@@ -53,7 +53,8 @@ function ThemedApp() {
     <>
       <StatusBar
         barStyle={resolvedScheme === 'dark' ? 'light-content' : 'dark-content'}
-        backgroundColor={themeColors.background}
+        backgroundColor="transparent"
+        translucent
       />
       <RootNavigator />
     </>

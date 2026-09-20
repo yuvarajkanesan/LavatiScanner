@@ -600,9 +600,10 @@ export default function HomeScreen({navigation}: Props) {
               tintColor={colors.accent}
             />
           }
-          renderItem={({item}) => (
+          renderItem={({item, index}) => (
             <DocumentCard
               document={item}
+              index={index}
               onPress={() => handleCardPress(item)}
               onLongPress={() => handleCardLongPress(item)}
               selectionMode={selectionMode}
@@ -625,9 +626,10 @@ export default function HomeScreen({navigation}: Props) {
               tintColor={colors.accent}
             />
           }
-          renderItem={({item}) => (
+          renderItem={({item, index}) => (
             <DocumentListRow
               document={item}
+              index={index}
               onPress={() => handleCardPress(item)}
               onLongPress={() => handleCardLongPress(item)}
               selectionMode={selectionMode}
@@ -705,9 +707,10 @@ export default function HomeScreen({navigation}: Props) {
               </TouchableOpacity>
             );
           }}
-          renderItem={({item}) => (
+          renderItem={({item, index}) => (
             <DocumentListRow
               document={item}
+              index={index}
               onPress={() => handleCardPress(item)}
               onLongPress={() => handleCardLongPress(item)}
               selectionMode={selectionMode}

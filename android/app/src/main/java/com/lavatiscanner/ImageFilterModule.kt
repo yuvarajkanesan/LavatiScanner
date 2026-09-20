@@ -31,6 +31,32 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
 
   override fun getName() = "ImageFilterModule"
 
+  /**
+   * Decodes at full resolution when `maxDimension <= 0` (the real "bake to file"
+   * path, which needs full quality), otherwise decodes pre-downsampled via
+   * `inSampleSize` so a preview thumbnail never briefly holds a full-sensor-resolution
+   * ARGB_8888 bitmap in memory. Without this, rendering N concurrent preview
+   * thumbnails (filmstrip + per-page strip) scales native memory with page
+   * count and can OOM-crash the whole app past ~3-4 pages on a high-megapixel
+   * camera.
+   */
+  private fun decodeSampledBitmap(path: String, maxDimension: Int): Bitmap {
+    if (maxDimension <= 0) {
+      return BitmapFactory.decodeFile(path)
+          ?: throw IllegalStateException("Could not decode image at $path")
+    }
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    var sampleSize = 1
+    while (bounds.outWidth / (sampleSize * 2) >= maxDimension &&
+        bounds.outHeight / (sampleSize * 2) >= maxDimension) {
+      sampleSize *= 2
+    }
+    val options = BitmapFactory.Options().apply { inSampleSize = sampleSize }
+    return BitmapFactory.decodeFile(path, options)
+        ?: throw IllegalStateException("Could not decode image at $path")
+  }
+
   @ReactMethod
   fun applyColorMatrix(
       inputPath: String,
@@ -38,14 +64,13 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
       matrix: ReadableArray,
       quality: Int,
       sharpenAmount: Double,
+      maxDimension: Int,
       promise: Promise
   ) {
     Thread {
       try {
         val cleanInput = inputPath.removePrefix("file://")
-        val srcBitmap =
-            BitmapFactory.decodeFile(cleanInput)
-                ?: throw IllegalStateException("Could not decode image at $cleanInput")
+        val srcBitmap = decodeSampledBitmap(cleanInput, maxDimension)
 
         val values = FloatArray(20)
         for (i in 0 until 20) {

@@ -1,8 +1,13 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import { MainTabParamList } from './types';
 import HomeScreen from '../screens/HomeScreen';
 import ToolsScreen from '../screens/ToolsScreen';
@@ -56,6 +61,55 @@ const ICONS_FILLED: Record<keyof MainTabParamList, string> = {
   Tools: 'toolbox',
   Settings: 'cog',
 };
+/** Each tab gets its own color from the fun palette instead of one uniform
+ * accent, so the bar itself reads as playful/colorful. */
+const TAB_COLOR_INDEX: Record<keyof MainTabParamList, number> = {
+  Home: 0,
+  Tools: 5,
+  Settings: 4,
+};
+
+function TabIcon({
+  focused,
+  name,
+  activeColor,
+  inactiveColor,
+  size,
+}: {
+  focused: boolean;
+  name: string;
+  activeColor: string;
+  inactiveColor: string;
+  size: number;
+}) {
+  const scale = useSharedValue(1);
+  useEffect(() => {
+    if (focused) {
+      scale.value = withSpring(1.2, { damping: 6, stiffness: 300 }, () => {
+        scale.value = withSpring(1, { damping: 8, stiffness: 260 });
+      });
+    }
+  }, [focused, scale]);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View
+      style={[
+        styles.tabIconWrap,
+        focused && { backgroundColor: `${activeColor}26` },
+        animatedStyle,
+      ]}>
+      <Icon
+        name={name}
+        family="community"
+        size={size - 2}
+        color={focused ? activeColor : inactiveColor}
+      />
+    </Animated.View>
+  );
+}
 
 export default function MainTabs() {
   const { colors } = useTheme();
@@ -80,7 +134,6 @@ export default function MainTabs() {
           />
         ),
         headerShadowVisible: false,
-        tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
           borderTopColor: colors.border,
@@ -97,25 +150,37 @@ export default function MainTabs() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
         tabBarIcon: ({ focused, color, size }) => {
           const name = route.name as keyof MainTabParamList;
+          const activeColor = colors.funPalette[TAB_COLOR_INDEX[name]];
           return (
-            <View style={[styles.tabIconWrap, focused && { backgroundColor: colors.accentMuted }]}>
-              <Icon
-                name={focused ? ICONS_FILLED[name] : ICONS_OUTLINE[name]}
-                family="community"
-                size={size - 2}
-                color={color}
-              />
-            </View>
+            <TabIcon
+              focused={focused}
+              name={focused ? ICONS_FILLED[name] : ICONS_OUTLINE[name]}
+              activeColor={activeColor}
+              inactiveColor={color}
+              size={size}
+            />
           );
         },
       })}>
       <Tab.Screen
         name="Home"
         component={HomeScreen}
-        options={{ title: 'Lavati Scanner', headerTitle: () => <HomeHeaderTitle /> }}
+        options={{
+          title: 'Lavati Scanner',
+          headerTitle: () => <HomeHeaderTitle />,
+          tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Home],
+        }}
       />
-      <Tab.Screen name="Tools" component={ToolsScreen} />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
+      <Tab.Screen
+        name="Tools"
+        component={ToolsScreen}
+        options={{ tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Tools] }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Settings] }}
+      />
     </Tab.Navigator>
   );
 }

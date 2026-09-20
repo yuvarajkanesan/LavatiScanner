@@ -12,6 +12,9 @@ interface Props {
   onLongPress?: () => void;
   selectionMode?: boolean;
   selected?: boolean;
+  /** Position in the list — cycles through the app's fun palette so the
+   * list reads as colorful/varied rather than every row looking identical. */
+  index?: number;
 }
 
 export default function DocumentListRow({
@@ -20,15 +23,18 @@ export default function DocumentListRow({
   onLongPress,
   selectionMode,
   selected,
+  index = 0,
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const accentColor = colors.funPalette[index % colors.funPalette.length];
   return (
     <TouchableOpacity
       style={[styles.row, selected && styles.rowSelected]}
       onPress={onPress}
       onLongPress={onLongPress}
       activeOpacity={0.7}>
+      <View style={[styles.accentStripe, { backgroundColor: accentColor }]} />
       {selectionMode && (
         <View style={[styles.checkCircle, selected && styles.checkCircleSelected]}>
           {selected && <Icon name="check" size={14} color={colors.white} />}
@@ -37,7 +43,7 @@ export default function DocumentListRow({
       {document.thumbnailPath ? (
         <Image
           source={{ uri: `file://${document.thumbnailPath}` }}
-          style={styles.thumbnail}
+          style={[styles.thumbnail, { borderColor: `${accentColor}55` }]}
           resizeMode="cover"
         />
       ) : (
@@ -65,14 +71,23 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: 14,
+    borderRadius: 18,
     padding: 10,
+    paddingLeft: 14,
     marginBottom: 10,
+    overflow: 'hidden',
     elevation: 2,
     shadowColor: colors.black,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
+  },
+  accentStripe: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 5,
   },
   rowSelected: {
     borderColor: colors.accent,
@@ -95,7 +110,8 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
   thumbnail: {
     width: 44,
     height: 58,
-    borderRadius: 6,
+    borderRadius: 10,
+    borderWidth: 2,
     backgroundColor: colors.border,
   },
   thumbnailPlaceholder: {

@@ -160,9 +160,10 @@ export default function FolderDetailScreen({navigation, route}: Props) {
               tintColor={colors.accent}
             />
           }
-          renderItem={({item}) => (
+          renderItem={({item, index}) => (
             <DocumentCard
               document={item}
+              index={index}
               onPress={() =>
                 navigation.navigate('DocumentDetail', {docId: item.id})
               }
@@ -185,9 +186,10 @@ export default function FolderDetailScreen({navigation, route}: Props) {
               tintColor={colors.accent}
             />
           }
-          renderItem={({item}) => (
+          renderItem={({item, index}) => (
             <DocumentListRow
               document={item}
+              index={index}
               onPress={() =>
                 navigation.navigate('DocumentDetail', {docId: item.id})
               }

@@ -22,12 +22,16 @@ import {
 } from 'react-native-vision-camera';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
+import {
+  accelerometer,
+  setUpdateIntervalForType,
+  SensorTypes,
+} from 'react-native-sensors';
 import Alert from '../utils/customAlert';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {CaptureMode, RootStackParamList} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
 import {pickGalleryImages, pickImportFiles} from '../services/filePicker';
-import {startDocumentScan} from '../services/documentScanner';
 import {ID_CARD_SUB_MODES, IdCardSubMode} from '../constants/idCardModes';
 import Icon from '../components/Icon';
 import IdCardIllustration from '../components/IdCardIllustration';
@@ -36,6 +40,17 @@ import {colors} from '../theme/colors';
 type Props = NativeStackScreenProps<RootStackParamList, 'Scan'>;
 type Flash = 'off' | 'on' | 'auto';
 type CameraPosition = 'back' | 'front';
+
+/** Auto-capture "steadiness" tuning — no document-edge detection, just
+ * waits for the accelerometer to show the hand has stopped moving. */
+const STEADY_SAMPLE_INTERVAL_MS = 100;
+const STEADY_WINDOW_SIZE = 6;
+/** Max acceleration-magnitude swing (m/s²) across the window to count as
+ * "still" — small enough to reject an unsteady hand, loose enough that a
+ * genuinely still phone's sensor noise doesn't fail the check. */
+const STEADY_MAGNITUDE_RANGE = 0.15;
+/** How long the window must stay steady before the shutter fires. */
+const STEADY_HOLD_MS = 500;
 
 /** Framing guide aspect ratio (width/height) shown per mode, to help line up
  * the shot before capturing — modes not listed get no guide overlay. */
@@ -117,8 +132,8 @@ export default function CaptureScreen({navigation, route}: Props) {
   const [exposure, setExposure] = useState(0);
   const [exposureVisible, setExposureVisible] = useState(false);
   const [capturing, setCapturing] = useState(false);
-  const [scanningDocs, setScanningDocs] = useState(false);
   const [isScreenActive, setIsScreenActive] = useState(true);
+  const [isSteady, setIsSteady] = useState(false);
   const [introVisible, setIntroVisible] = useState(() =>
     needsIntro(route.params?.mode ?? 'docs', !!backCapture),
   );
@@ -245,35 +260,6 @@ export default function CaptureScreen({navigation, route}: Props) {
     }
   }
 
-  /**
-   * "Docs" mode launches Google's ML Kit Document Scanner instead of using
-   * our own live camera — it already does edge detection, perspective
-   * correction, and multi-page capture natively, so returned pages go
-   * straight into the session (skipping the manual Trim screen, which is
-   * for raw uncropped photos) and on to Filter for filter selection.
-   */
-  async function handleDocumentScan() {
-    if (scanningDocs) {
-      return;
-    }
-    try {
-      setScanningDocs(true);
-      const uris = await startDocumentScan();
-      if (uris.length === 0) {
-        return;
-      }
-      const pageIds = uris.map(uri => session.addPage(uri));
-      navigation.replace('Filter', {pageId: pageIds[0]});
-    } catch (error) {
-      Alert.alert(
-        'Scan failed',
-        'Could not open the document scanner. Please try again.',
-      );
-    } finally {
-      setScanningDocs(false);
-    }
-  }
-
   async function handleCapture() {
     if (!cameraRef.current || capturing) {
       return;
@@ -294,6 +280,62 @@ export default function CaptureScreen({navigation, route}: Props) {
       setCapturing(false);
     }
   }
+
+  const magnitudeBufferRef = useRef<number[]>([]);
+  const steadySinceRef = useRef<number | null>(null);
+  const autoCaptureCooldownRef = useRef(false);
+
+  // Auto-capture: no document-edge detection (that needs real-time CV /
+  // frame processors, a much bigger native project) - instead it watches
+  // the accelerometer for a short window of near-constant motion (i.e. the
+  // hand has stopped moving) and fires the shutter itself, like a
+  // self-timer that waits for you to hold still instead of counting down.
+  useEffect(() => {
+    if (!session.autoCaptureEnabled || capturing || !isScreenActive) {
+      setIsSteady(false);
+      return;
+    }
+    setUpdateIntervalForType(SensorTypes.accelerometer, STEADY_SAMPLE_INTERVAL_MS);
+    magnitudeBufferRef.current = [];
+    steadySinceRef.current = null;
+    autoCaptureCooldownRef.current = false;
+
+    const subscription = accelerometer.subscribe(({x, y, z}) => {
+      const magnitude = Math.sqrt(x * x + y * y + z * z);
+      const buffer = magnitudeBufferRef.current;
+      buffer.push(magnitude);
+      if (buffer.length > STEADY_WINDOW_SIZE) {
+        buffer.shift();
+      }
+      if (buffer.length < STEADY_WINDOW_SIZE) {
+        return;
+      }
+
+      const range = Math.max(...buffer) - Math.min(...buffer);
+      const steady = range < STEADY_MAGNITUDE_RANGE;
+      setIsSteady(steady);
+
+      if (!steady) {
+        steadySinceRef.current = null;
+        return;
+      }
+      if (steadySinceRef.current === null) {
+        steadySinceRef.current = Date.now();
+        return;
+      }
+      const steadyForMs = Date.now() - steadySinceRef.current;
+      if (steadyForMs >= STEADY_HOLD_MS && !autoCaptureCooldownRef.current) {
+        autoCaptureCooldownRef.current = true;
+        handleCapture();
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      setIsSteady(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session.autoCaptureEnabled, capturing, isScreenActive]);
 
   async function handleImport() {
     const images = await pickGalleryImages();
@@ -428,6 +470,17 @@ export default function CaptureScreen({navigation, route}: Props) {
               color={exposureVisible ? colors.accent : colors.white}
             />
           </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() =>
+              session.setAutoCaptureEnabled(!session.autoCaptureEnabled)
+            }
+            hitSlop={8}>
+            <Icon
+              name="motion-photos-auto"
+              size={22}
+              color={session.autoCaptureEnabled ? colors.accent : colors.white}
+            />
+          </TouchableOpacity>
           {frontDevice && backDevice && (
             <TouchableOpacity onPress={flipCamera} hitSlop={8}>
               <Icon name="cameraswitch" size={22} color={colors.white} />
@@ -471,16 +524,33 @@ export default function CaptureScreen({navigation, route}: Props) {
         )}
 
         <View style={styles.modeLabelWrap} pointerEvents="none">
-          <Text style={styles.modeLabel}>
+          <Text
+            style={[
+              styles.modeLabel,
+              session.autoCaptureEnabled &&
+                isSteady && {color: colors.accent, fontWeight: '700'},
+            ]}>
             {backCapture
               ? 'ID Card · Back Side'
-              : mode === 'docs'
-              ? 'Tap the shutter to open the document scanner'
+              : session.autoCaptureEnabled
+              ? isSteady
+                ? 'Steady — capturing…'
+                : 'Hold still to auto-capture'
               : !introVisible && mode === 'book'
               ? 'Line up the spine with the center guide'
               : activeModeLabel}
           </Text>
         </View>
+
+        {session.autoCaptureEnabled && (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.autoCaptureBorder,
+              isSteady && styles.autoCaptureBorderSteady,
+            ]}
+          />
+        )}
       </View>
 
       {!backCapture && (
@@ -512,13 +582,11 @@ export default function CaptureScreen({navigation, route}: Props) {
 
         <TouchableOpacity
           style={styles.shutter}
-          onPress={mode === 'docs' ? handleDocumentScan : handleCapture}
-          disabled={mode === 'docs' ? scanningDocs : capturing || !device}
+          onPress={handleCapture}
+          disabled={capturing || !device}
           hitSlop={8}>
-          {(mode === 'docs' ? scanningDocs : capturing) ? (
+          {capturing ? (
             <ActivityIndicator color={colors.black} />
-          ) : mode === 'docs' ? (
-            <Icon name="document-scanner" size={26} color={colors.black} />
           ) : (
             <View style={styles.shutterInner} />
           )}
@@ -676,6 +744,20 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'rgba(255,255,255,0.85)',
     borderStyle: 'dashed',
+  },
+  /** Frames the whole preview while "hold still to auto-capture" is on, so
+   * it's obvious what's being watched - turns solid accent right as the
+   * steady-hold timer is satisfied and the shutter is about to fire. */
+  autoCaptureBorder: {
+    ...StyleSheet.absoluteFillObject,
+    margin: 10,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: 'rgba(255,255,255,0.55)',
+  },
+  autoCaptureBorderSteady: {
+    borderWidth: 5,
+    borderColor: colors.accent,
   },
   bookSplitGuide: {
     position: 'absolute',

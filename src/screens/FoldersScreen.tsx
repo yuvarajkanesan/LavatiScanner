@@ -206,14 +206,26 @@ export default function FoldersScreen({navigation}: Props) {
               tintColor={colors.accent}
             />
           }
-          renderItem={({item}) => (
+          renderItem={({item, index}) => (
             <TouchableOpacity
               style={styles.row}
               onPress={() => handleOpenFolder(item)}
               onLongPress={() => handleLongPress(item)}
               activeOpacity={0.7}>
-              <View style={styles.folderIconWrap}>
-                <Icon name="folder" size={26} color={colors.gold} />
+              <View
+                style={[
+                  styles.folderIconWrap,
+                  {
+                    backgroundColor: `${
+                      colors.funPalette[index % colors.funPalette.length]
+                    }26`,
+                  },
+                ]}>
+                <Icon
+                  name="folder"
+                  size={26}
+                  color={colors.funPalette[index % colors.funPalette.length]}
+                />
                 {item.isLocked && (
                   <View style={styles.lockBadge}>
                     <Icon name="lock" size={11} color={colors.white} />
@@ -275,6 +287,11 @@ const createStyles = (colors: AppColors) =>
       marginBottom: 10,
     },
     folderIconWrap: {
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      alignItems: 'center',
+      justifyContent: 'center',
       marginRight: 14,
     },
     lockBadge: {

@@ -28,10 +28,10 @@ export default function Fab({onPress, icon = 'add', size = 58, bottom = 24, vari
   const animatedStyle = useAnimatedStyle(() => ({transform: [{scale: scale.value}]}));
 
   function handlePressIn() {
-    scale.value = withSpring(0.92, {damping: 15, stiffness: 400});
+    scale.value = withSpring(0.88, {damping: 13, stiffness: 380});
   }
   function handlePressOut() {
-    scale.value = withSpring(1, {damping: 15, stiffness: 400});
+    scale.value = withSpring(1, {damping: 7, stiffness: 240});
   }
 
   const shape = {

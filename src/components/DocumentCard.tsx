@@ -1,5 +1,10 @@
 import React, { useMemo } from 'react';
-import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 import Icon from './Icon';
 import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
@@ -16,7 +21,12 @@ interface Props {
   /** Overrides the card's default 2-column (47%) width — pass a computed
    * percentage to match a different grid column count (e.g. on tablets). */
   widthPercent?: PercentWidth;
+  /** Position in the list — cycles through the app's fun palette so the
+   * grid reads as colorful/varied rather than every card looking identical. */
+  index?: number;
 }
+
+const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 export default function DocumentCard({
   document,
@@ -25,16 +35,33 @@ export default function DocumentCard({
   selectionMode,
   selected,
   widthPercent,
+  index = 0,
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const accentColor = colors.funPalette[index % colors.funPalette.length];
+  const scale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
   return (
-    <TouchableOpacity
-      style={[styles.card, widthPercent ? { width: widthPercent } : null]}
+    <AnimatedPressable
+      style={[styles.card, widthPercent ? { width: widthPercent } : null, animatedStyle]}
       onPress={onPress}
       onLongPress={onLongPress}
-      activeOpacity={0.7}>
-      <View style={[styles.thumbnailWrap, selected && styles.thumbnailWrapSelected]}>
+      onPressIn={() => {
+        scale.value = withSpring(0.95, { damping: 14, stiffness: 380 });
+      }}
+      onPressOut={() => {
+        scale.value = withSpring(1, { damping: 8, stiffness: 260 });
+      }}>
+      <View
+        style={[
+          styles.thumbnailWrap,
+          { borderColor: selected ? colors.accent : `${accentColor}55` },
+          selected && styles.thumbnailWrapSelected,
+        ]}>
         {document.thumbnailPath ? (
           <Image
             source={{ uri: `file://${document.thumbnailPath}` }}
@@ -44,7 +71,7 @@ export default function DocumentCard({
         ) : (
           <View style={styles.thumbnailPlaceholder} />
         )}
-        <View style={styles.pageBadge}>
+        <View style={[styles.pageBadge, { backgroundColor: accentColor }]}>
           <Text style={styles.pageBadgeText}>{document.pageCount}</Text>
         </View>
         {selectionMode && (
@@ -61,7 +88,7 @@ export default function DocumentCard({
         {formatDate(document.updatedAt)} | {formatTime(document.updatedAt)} |{' '}
         {formatBytes(document.totalSizeBytes)}
       </Text>
-    </TouchableOpacity>
+    </AnimatedPressable>
   );
 }
 
@@ -72,10 +99,9 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
   },
   thumbnailWrap: {
     aspectRatio: 0.75,
-    borderRadius: 14,
+    borderRadius: 20,
     backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    borderWidth: 2,
     overflow: 'hidden',
     elevation: 3,
     shadowColor: colors.black,
@@ -84,8 +110,7 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     shadowRadius: 5,
   },
   thumbnailWrapSelected: {
-    borderColor: colors.accent,
-    borderWidth: 2,
+    borderWidth: 2.5,
   },
   thumbnail: {
     width: '100%',
@@ -99,7 +124,6 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     position: 'absolute',
     right: 6,
     bottom: 6,
-    backgroundColor: colors.overlay,
     borderRadius: 10,
     paddingHorizontal: 7,
     paddingVertical: 2,

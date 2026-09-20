@@ -60,9 +60,16 @@ export async function renderFilterPreview(
     matrix,
     92,
     getSharpenAmount(filter),
+    PREVIEW_MAX_DIMENSION,
   );
   return `file://${resultPath}`;
 }
+
+/** Preview thumbnails (filmstrip + per-page strip) never need more pixels
+ * than they'll ever be displayed at - decoding them at full sensor
+ * resolution is what was blowing the native heap once a few concurrent
+ * previews piled up. */
+const PREVIEW_MAX_DIMENSION = 640;
 
 /** Bakes a filter to a specific destination path (for permanently saving a page). */
 export async function bakeFilterToFile(
@@ -83,6 +90,7 @@ export async function bakeFilterToFile(
     matrix,
     quality,
     getSharpenAmount(filter),
+    0,
   );
 }
 
@@ -105,6 +113,7 @@ export async function compressImage(
     outputPath,
     IDENTITY_MATRIX,
     quality,
+    0,
     0,
   );
 }
