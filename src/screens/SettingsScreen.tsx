@@ -32,6 +32,16 @@ import {formatBytes} from '../utils/format';
 import Icon from '../components/Icon';
 import PinPad from '../components/PinPad';
 import ScreenBackground from '../components/ScreenBackground';
+import {
+  getSignedInGoogleUser,
+  signInToGoogleDrive,
+  signOutOfGoogleDrive,
+} from '../services/googleDrive';
+import {
+  backupAllDocumentsToDrive,
+  BackupProgress,
+} from '../services/driveBackup';
+import {User as GoogleUser} from '@react-native-google-signin/google-signin';
 
 type Props = TabScreenProps<'Settings'>;
 
@@ -60,12 +70,17 @@ export default function SettingsScreen({navigation}: Props) {
   const [biometryLabel, setBiometryLabel] = useState<string | null>(null);
   const [biometricEnabled, setBiometricEnabled] = useState(false);
   const [biometricBusy, setBiometricBusy] = useState(false);
+  const [driveUser, setDriveUser] = useState<GoogleUser | null>(null);
+  const [driveConnectBusy, setDriveConnectBusy] = useState(false);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupStatus, setBackupStatus] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setPinIsSet(await hasPin());
     setStorageBytes(await getStorageUsageBytes());
     setBiometryLabel(await getBiometryLabel());
     setBiometricEnabled(await isBiometricUnlockEnabled());
+    setDriveUser(getSignedInGoogleUser());
   }, []);
 
   useFocusEffect(
@@ -154,6 +169,76 @@ export default function SettingsScreen({navigation}: Props) {
     }
     setBiometricBusy(false);
     load();
+  }
+
+  async function handleConnectDrive() {
+    setDriveConnectBusy(true);
+    try {
+      const user = await signInToGoogleDrive();
+      setDriveUser(user);
+    } catch (err) {
+      Alert.alert(
+        'Could not connect',
+        err instanceof Error ? err.message : 'Google sign-in failed.',
+      );
+    } finally {
+      setDriveConnectBusy(false);
+    }
+  }
+
+  function handleDisconnectDrive() {
+    Alert.alert(
+      'Disconnect Google Drive',
+      'Your backed-up documents stay in Drive, but this app will stop being able to update them until you reconnect.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Disconnect',
+          style: 'destructive',
+          onPress: async () => {
+            await signOutOfGoogleDrive();
+            setDriveUser(null);
+          },
+        },
+      ],
+    );
+  }
+
+  async function handleBackupNow() {
+    if (!driveUser) {
+      Alert.alert('Connect Google Drive', 'Connect your account first.');
+      return;
+    }
+    setBackupBusy(true);
+    setBackupStatus('Starting backup...');
+    try {
+      const summary = await backupAllDocumentsToDrive(
+        (progress: BackupProgress) => {
+          setBackupStatus(
+            `Backing up ${progress.current}/${progress.total}: ${progress.documentName}`,
+          );
+        },
+      );
+      const failedNote =
+        summary.failed > 0
+          ? `\n\n${summary.failed} failed:\n${summary.errors
+              .slice(0, 3)
+              .map(e => `- ${e.documentName}: ${e.error}`)
+              .join('\n')}`
+          : '';
+      Alert.alert(
+        'Backup complete',
+        `${summary.succeeded} document${summary.succeeded === 1 ? '' : 's'} backed up to Drive.${failedNote}`,
+      );
+    } catch (err) {
+      Alert.alert(
+        'Backup failed',
+        err instanceof Error ? err.message : 'Something went wrong.',
+      );
+    } finally {
+      setBackupBusy(false);
+      setBackupStatus(null);
+    }
   }
 
   function handleClearCache() {
@@ -294,6 +379,33 @@ export default function SettingsScreen({navigation}: Props) {
           label="Clear cache"
           onPress={handleClearCache}
         />
+      </Section>
+
+      <Section title="Backup">
+        {driveUser ? (
+          <>
+            <Row icon="cloud-done" label={driveUser.user.email} disabled />
+            <Row
+              icon="cloud-upload"
+              label={backupBusy ? backupStatus ?? 'Backing up...' : 'Back up now'}
+              onPress={backupBusy ? undefined : handleBackupNow}
+              disabled={backupBusy}
+            />
+            <Row
+              icon="link-off"
+              label="Disconnect Google Drive"
+              onPress={handleDisconnectDrive}
+              danger
+            />
+          </>
+        ) : (
+          <Row
+            icon="cloud"
+            label={driveConnectBusy ? 'Connecting...' : 'Connect Google Drive'}
+            onPress={driveConnectBusy ? undefined : handleConnectDrive}
+            disabled={driveConnectBusy}
+          />
+        )}
       </Section>
 
       <Section title="Legal">

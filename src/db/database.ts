@@ -35,6 +35,8 @@ export async function getDatabase(): Promise<SQLiteDatabase> {
       folderId TEXT,
       createdAt INTEGER NOT NULL,
       updatedAt INTEGER NOT NULL,
+      driveFileId TEXT,
+      driveSyncedAt INTEGER,
       FOREIGN KEY (folderId) REFERENCES folders(id) ON DELETE SET NULL
     );
   `);
@@ -88,6 +90,23 @@ export async function getDatabase(): Promise<SQLiteDatabase> {
   }
   await backfillMissingFileSizes(dbInstance);
 
+  const [docTableInfo] = await dbInstance.executeSql(
+    'PRAGMA table_info(documents);',
+  );
+  const existingDocColumns = rowsToArray<{name: string}>(docTableInfo).map(
+    c => c.name,
+  );
+  if (!existingDocColumns.includes('driveFileId')) {
+    await dbInstance.executeSql(
+      'ALTER TABLE documents ADD COLUMN driveFileId TEXT;',
+    );
+  }
+  if (!existingDocColumns.includes('driveSyncedAt')) {
+    await dbInstance.executeSql(
+      'ALTER TABLE documents ADD COLUMN driveSyncedAt INTEGER;',
+    );
+  }
+
   return dbInstance;
 }
 
@@ -134,12 +153,28 @@ export async function createDocument(
     folderId,
     createdAt: now,
     updatedAt: now,
+    driveFileId: null,
+    driveSyncedAt: null,
   };
   await db.executeSql(
     'INSERT INTO documents (id, name, folderId, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?);',
     [doc.id, doc.name, doc.folderId, doc.createdAt, doc.updatedAt],
   );
   return doc;
+}
+
+/** Records that `docId` was just backed up to Drive as `driveFileId`, so the
+ * next backup updates the same Drive file's content instead of creating a
+ * duplicate. */
+export async function setDocumentDriveSync(
+  id: string,
+  driveFileId: string,
+): Promise<void> {
+  const db = await getDatabase();
+  await db.executeSql(
+    'UPDATE documents SET driveFileId = ?, driveSyncedAt = ? WHERE id = ?;',
+    [driveFileId, Date.now(), id],
+  );
 }
 
 export async function renameDocument(id: string, name: string): Promise<void> {

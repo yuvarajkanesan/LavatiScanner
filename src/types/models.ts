@@ -25,6 +25,10 @@ export interface Document {
   folderId: string | null;
   createdAt: number;
   updatedAt: number;
+  /** Google Drive file ID of this document's backed-up PDF, once uploaded. */
+  driveFileId: string | null;
+  /** Timestamp of the last successful Drive backup of this document. */
+  driveSyncedAt: number | null;
 }
 
 export interface Page {

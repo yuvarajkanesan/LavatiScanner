@@ -14,6 +14,7 @@
     "@react-native-async-storage/async-storage": "1.23.1",
     "@react-native-camera-roll/camera-roll": "^7.10.2",
     "@react-native-clipboard/clipboard": "1.14.1",
+    "@react-native-google-signin/google-signin": "^13.2.0",
     "@react-native-ml-kit/barcode-scanning": "1.4.1",
     "@react-native-ml-kit/text-recognition": "1.5.2",
     "@react-navigation/bottom-tabs": "^6.5.20",
