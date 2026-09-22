@@ -14,6 +14,12 @@ import {TabScreenProps} from '../navigation/types';
 import {APP_VERSION} from '../constants';
 import {AppColors} from '../theme/colors';
 import {ThemeMode, useTheme} from '../theme/ThemeContext';
+import {
+  MAX_FONT_SCALE,
+  MIN_FONT_SCALE,
+  useFontScale,
+} from '../theme/FontScaleContext';
+import Slider from '../components/Slider';
 import {clearPin, hasPin, setPin, verifyPin} from '../services/pin';
 import {
   disableBiometricUnlock,
@@ -44,6 +50,7 @@ const THEME_OPTIONS: {key: ThemeMode; label: string; icon: string}[] = [
 
 export default function SettingsScreen({navigation}: Props) {
   const {colors, mode, setMode} = useTheme();
+  const {fontScale, setFontScale} = useFontScale();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [pinIsSet, setPinIsSet] = useState(false);
   const [storageBytes, setStorageBytes] = useState(0);
@@ -225,6 +232,28 @@ export default function SettingsScreen({navigation}: Props) {
             );
           })}
         </View>
+      </Section>
+
+      <Section title="Text Size">
+        <View style={styles.fontSizeRow}>
+          <Text style={styles.fontSizeSampleSmall}>A</Text>
+          <View style={styles.fontSizeSliderWrap}>
+            <Slider
+              min={MIN_FONT_SCALE}
+              max={MAX_FONT_SCALE}
+              value={fontScale}
+              step={0.05}
+              onValueChange={setFontScale}
+            />
+          </View>
+          <Text style={styles.fontSizeSampleLarge}>A</Text>
+        </View>
+        <Text style={styles.fontSizePercent}>
+          {Math.round(fontScale * 100)}%
+        </Text>
+        <Text style={[styles.fontSizePreview, {fontSize: 15 * fontScale}]}>
+          This is how your document names and buttons will look.
+        </Text>
       </Section>
 
       <Section title="Security">
@@ -443,6 +472,36 @@ const createStyles = (colors: AppColors) =>
     },
     themeChipLabelActive: {
       color: colors.white,
+    },
+    fontSizeRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 14,
+    },
+    fontSizeSliderWrap: {
+      flex: 1,
+    },
+    fontSizeSampleSmall: {
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.textMuted,
+    },
+    fontSizeSampleLarge: {
+      fontSize: 22,
+      fontWeight: '700',
+      color: colors.textMuted,
+    },
+    fontSizePercent: {
+      marginTop: 6,
+      fontSize: 13,
+      fontWeight: '700',
+      color: colors.accent,
+      textAlign: 'center',
+    },
+    fontSizePreview: {
+      marginTop: 10,
+      color: colors.text,
+      textAlign: 'center',
     },
     row: {
       flexDirection: 'row',

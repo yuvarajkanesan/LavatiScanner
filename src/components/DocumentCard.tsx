@@ -5,6 +5,7 @@ import Animated, {
   useSharedValue,
   withSpring,
 } from 'react-native-reanimated';
+import AppText from './AppText';
 import Icon from './Icon';
 import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
@@ -80,9 +81,9 @@ export default function DocumentCard({
           </View>
         )}
       </View>
-      <Text style={styles.name} numberOfLines={1}>
+      <AppText style={styles.name} numberOfLines={1}>
         {document.name}
-      </Text>
+      </AppText>
       <Text style={styles.date} numberOfLines={1}>
         {document.pageCount} page{document.pageCount === 1 ? '' : 's'} |{' '}
         {formatDate(document.updatedAt)} | {formatTime(document.updatedAt)} |{' '}

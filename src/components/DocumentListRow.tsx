@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import AppText from './AppText';
 import Icon from './Icon';
 import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
@@ -50,9 +51,9 @@ export default function DocumentListRow({
         <View style={styles.thumbnailPlaceholder} />
       )}
       <View style={styles.info}>
-        <Text style={styles.name} numberOfLines={1}>
+        <AppText style={styles.name} numberOfLines={1}>
           {document.name}
-        </Text>
+        </AppText>
         <Text style={styles.meta} numberOfLines={1}>
           {document.pageCount} page{document.pageCount === 1 ? '' : 's'} |{' '}
           {formatDate(document.updatedAt)} | {formatTime(document.updatedAt)} |{' '}

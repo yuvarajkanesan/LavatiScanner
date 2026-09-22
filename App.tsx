@@ -10,6 +10,7 @@ import {SafeAreaProvider} from 'react-native-safe-area-context';
 import RootNavigator from './src/navigation/RootNavigator';
 import {ScanSessionProvider} from './src/context/ScanSessionContext';
 import {ThemeProvider, useTheme} from './src/theme/ThemeContext';
+import {FontScaleProvider} from './src/theme/FontScaleContext';
 import {TextPromptHost} from './src/utils/promptForText';
 import {CustomAlertHost} from './src/utils/customAlert';
 import {getDatabase} from './src/db/database';
@@ -36,11 +37,13 @@ export default function App(): React.JSX.Element {
     <GestureHandlerRootView style={styles.flex}>
       <SafeAreaProvider>
         <ThemeProvider>
-          <ScanSessionProvider>
-            <ThemedApp />
-            <TextPromptHost />
-            <CustomAlertHost />
-          </ScanSessionProvider>
+          <FontScaleProvider>
+            <ScanSessionProvider>
+              <ThemedApp />
+              <TextPromptHost />
+              <CustomAlertHost />
+            </ScanSessionProvider>
+          </FontScaleProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

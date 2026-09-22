@@ -345,6 +345,19 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     }
   }
 
+  /** Swipe left/right in the full-screen preview moves to the next/previous
+   * page — a no-op at the first/last page rather than wrapping around. */
+  function handlePreviewSwipe(direction: 1 | -1) {
+    if (!previewPage) {
+      return;
+    }
+    const index = pages.findIndex(p => p.id === previewPage.id);
+    const next = pages[index + direction];
+    if (next) {
+      setPreviewPage(next);
+    }
+  }
+
   function handlePageCardLongPress(page: Page) {
     if (pageSelectionMode) {
       togglePageSelected(page.id);
@@ -1149,9 +1162,12 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
           </TouchableOpacity>
           {previewPage && (
             <ZoomableImage
+              key={previewPage.id}
               uri={`file://${previewPage.filePath}`}
               style={styles.previewImage}
               resizeMode="contain"
+              onSwipeLeft={() => handlePreviewSwipe(1)}
+              onSwipeRight={() => handlePreviewSwipe(-1)}
             />
           )}
           <View

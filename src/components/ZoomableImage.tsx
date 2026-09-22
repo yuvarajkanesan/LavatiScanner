@@ -22,10 +22,17 @@ interface Props {
   resizeMode?: ImageResizeMode;
   minScale?: number;
   maxScale?: number;
+  /** Fired on a left/right swipe release while not zoomed in (e.g. move to
+   * the next/previous page) — never while zoomed, so panning a zoomed image
+   * can't accidentally flip pages. */
+  onSwipeLeft?: () => void;
+  onSwipeRight?: () => void;
 }
 
 const DOUBLE_TAP_MS = 300;
 const TAP_SLOP = 8;
+const SWIPE_MIN_DISTANCE = 60;
+const SWIPE_MAX_VERTICAL_RATIO = 0.5;
 
 /**
  * Two-finger pinch to zoom + drag-to-pan-when-zoomed + double-tap to
@@ -40,6 +47,8 @@ export default function ZoomableImage({
   resizeMode = 'contain',
   minScale = 1,
   maxScale = 4,
+  onSwipeLeft,
+  onSwipeRight,
 }: Props) {
   const [scale, setScale] = useState(minScale);
   const [translate, setTranslate] = useState({x: 0, y: 0});
@@ -51,6 +60,14 @@ export default function ZoomableImage({
   const pinchStartScale = useRef(minScale);
   const panStart = useRef({x: 0, y: 0});
   const lastTap = useRef(0);
+  // The PanResponder below is created once via useRef, so reading the
+  // onSwipeLeft/onSwipeRight props directly inside it would close over
+  // whichever callback was passed on the very first render forever - these
+  // refs are kept in sync on every render instead.
+  const onSwipeLeftRef = useRef(onSwipeLeft);
+  const onSwipeRightRef = useRef(onSwipeRight);
+  onSwipeLeftRef.current = onSwipeLeft;
+  onSwipeRightRef.current = onSwipeRight;
 
   function updateScale(v: number) {
     scaleRef.current = v;
@@ -124,6 +141,18 @@ export default function ZoomableImage({
           Math.abs(gesture.dx) < TAP_SLOP &&
           Math.abs(gesture.dy) < TAP_SLOP &&
           evt.nativeEvent.changedTouches.length === 1;
+        if (
+          !wasTap &&
+          pinchStartScale.current <= minScale &&
+          Math.abs(gesture.dx) >= SWIPE_MIN_DISTANCE &&
+          Math.abs(gesture.dy) <= Math.abs(gesture.dx) * SWIPE_MAX_VERTICAL_RATIO
+        ) {
+          if (gesture.dx < 0) {
+            onSwipeLeftRef.current?.();
+          } else {
+            onSwipeRightRef.current?.();
+          }
+        }
         if (wasTap) {
           const now = Date.now();
           if (now - lastTap.current < DOUBLE_TAP_MS) {
