@@ -45,6 +45,8 @@ import {
   rotateImageFile90,
 } from '../services/pdfExport';
 import {recognizeTextFromImage} from '../services/ocr';
+import {getThumbnail} from '../services/nativeImageFilter';
+import {mapWithConcurrency} from '../utils/concurrency';
 import {Document, Page} from '../types/models';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
@@ -282,12 +284,37 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     | null
   >(null);
 
+  const [pageThumbnails, setPageThumbnails] = useState<Record<string, string>>(
+    {},
+  );
+
   const load = useCallback(async () => {
     const [d, p] = await Promise.all([getDocument(docId), listPages(docId)]);
     setDoc(d);
     setPages(p);
     setLoading(false);
+    resolvePageThumbnails(p);
   }, [docId]);
+
+  /** Same fix as the Home/Folder document lists (see `getThumbnail`): the
+   * page grid was rendering each page's full-resolution file just to show
+   * it a few hundred pixels wide in a grid cell. */
+  const resolvePageThumbnails = useCallback(async (pages: Page[]) => {
+    const resolved = await mapWithConcurrency(pages, 4, async page => {
+      try {
+        return [page.id, await getThumbnail(page.filePath)] as const;
+      } catch {
+        return [page.id, `file://${page.filePath}`] as const;
+      }
+    });
+    setPageThumbnails(prev => {
+      const next = {...prev};
+      for (const [id, uri] of resolved) {
+        next[id] = uri;
+      }
+      return next;
+    });
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -1045,7 +1072,11 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
                 onPress={() => handlePageCardPress(item.page)}
                 onLongPress={() => handlePageCardLongPress(item.page)}>
                 <Image
-                  source={{uri: `file://${item.page.filePath}`}}
+                  source={{
+                    uri:
+                      pageThumbnails[item.page.id] ??
+                      `file://${item.page.filePath}`,
+                  }}
                   style={styles.pageImage}
                   resizeMode="cover"
                 />

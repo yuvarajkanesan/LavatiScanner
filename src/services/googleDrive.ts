@@ -222,3 +222,11 @@ export async function uploadFileToDrive(
   }
   return fileId;
 }
+
+/** Deletes a file from the app's Drive folder - used to keep Drive in sync
+ * when a document is deleted locally. A 404 (already gone) is treated the
+ * same as success by callers that just want it gone. */
+export async function deleteFileFromDrive(fileId: string): Promise<void> {
+  const accessToken = await getFreshAccessToken();
+  await driveApiFetch(`/files/${fileId}`, accessToken, {method: 'DELETE'});
+}

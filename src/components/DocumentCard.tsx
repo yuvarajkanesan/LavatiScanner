@@ -12,6 +12,7 @@ import { useTheme } from '../theme/ThemeContext';
 import { DocumentSummary } from '../types/models';
 import { formatBytes, formatDate, formatTime } from '../utils/format';
 import { PercentWidth } from '../utils/responsive';
+import { isDocumentSynced } from '../services/driveBackup';
 
 interface Props {
   document: DocumentSummary;
@@ -25,6 +26,14 @@ interface Props {
   /** Position in the list — cycles through the app's fun palette so the
    * grid reads as colorful/varied rather than every card looking identical. */
   index?: number;
+  /** Shows the Drive sync badge - only when the caller confirmed Google
+   * Drive is actually connected, so nobody who hasn't set it up sees an
+   * icon that means nothing to them. */
+  showSyncStatus?: boolean;
+  /** Pre-resolved small cached thumbnail (see `getThumbnail` /
+   * `mapWithConcurrency` in the screen that renders this list) - falls back
+   * to the document's full-resolution page file until it's ready. */
+  thumbnailUri?: string;
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -37,10 +46,13 @@ export default function DocumentCard({
   selected,
   widthPercent,
   index = 0,
+  showSyncStatus,
+  thumbnailUri,
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const accentColor = colors.funPalette[index % colors.funPalette.length];
+  const synced = isDocumentSynced(document);
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -65,7 +77,7 @@ export default function DocumentCard({
         ]}>
         {document.thumbnailPath ? (
           <Image
-            source={{ uri: `file://${document.thumbnailPath}` }}
+            source={{ uri: thumbnailUri ?? `file://${document.thumbnailPath}` }}
             style={styles.thumbnail}
             resizeMode="cover"
           />
@@ -78,6 +90,19 @@ export default function DocumentCard({
         {selectionMode && (
           <View style={[styles.checkCircle, selected && styles.checkCircleSelected]}>
             {selected && <Icon name="check" size={14} color={colors.white} />}
+          </View>
+        )}
+        {showSyncStatus && !selectionMode && (
+          <View
+            style={[
+              styles.syncBadge,
+              { backgroundColor: synced ? colors.success : colors.textMuted },
+            ]}>
+            <Icon
+              name={synced ? 'cloud-done' : 'cloud-queue'}
+              size={12}
+              color={colors.white}
+            />
           </View>
         )}
       </View>
@@ -150,6 +175,18 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
   checkCircleSelected: {
     backgroundColor: colors.accent,
     borderColor: colors.accent,
+  },
+  syncBadge: {
+    position: 'absolute',
+    top: 6,
+    left: 6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.white,
   },
   name: {
     marginTop: 8,

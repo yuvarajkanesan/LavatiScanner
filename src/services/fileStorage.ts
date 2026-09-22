@@ -1,5 +1,6 @@
 import RNFS from 'react-native-fs';
 import { generateId } from '../utils/ids';
+import { FILTER_PREVIEW_CACHE_DIR } from './nativeImageFilter';
 
 export const SCANS_ROOT = `${RNFS.DocumentDirectoryPath}/scans`;
 export const EXPORTS_ROOT = `${RNFS.DocumentDirectoryPath}/exports`;
@@ -92,5 +93,13 @@ export async function clearExportsCache(): Promise<void> {
   const exists = await RNFS.exists(EXPORTS_ROOT);
   if (exists) {
     await RNFS.unlink(EXPORTS_ROOT);
+  }
+  // The filter-preview/thumbnail cache (`getThumbnail`, `renderFilterPreview`
+  // in nativeImageFilter.ts) never prunes itself - this is the only user
+  // lever to reclaim it. Both are fully regenerable on demand, so clearing
+  // them is always safe.
+  const previewCacheExists = await RNFS.exists(FILTER_PREVIEW_CACHE_DIR);
+  if (previewCacheExists) {
+    await RNFS.unlink(FILTER_PREVIEW_CACHE_DIR);
   }
 }

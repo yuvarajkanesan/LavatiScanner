@@ -159,6 +159,14 @@ export default function CaptureScreen({navigation, route}: Props) {
   const minExposure = device?.minExposure ?? -2;
   const maxExposure = device?.maxExposure ?? 2;
 
+  useEffect(() => {
+    return () => {
+      if (focusTimeoutRef.current) {
+        clearTimeout(focusTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Reset exposure back to neutral whenever the active camera changes (e.g.
   // flipping front/back) — the previous device's EV range doesn't carry over.
   useEffect(() => {

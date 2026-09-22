@@ -226,10 +226,15 @@ export default function SettingsScreen({navigation}: Props) {
               .map(e => `- ${e.documentName}: ${e.error}`)
               .join('\n')}`
           : '';
-      Alert.alert(
-        'Backup complete',
-        `${summary.succeeded} document${summary.succeeded === 1 ? '' : 's'} backed up to Drive.${failedNote}`,
-      );
+      const message =
+        summary.succeeded === 0 && summary.failed === 0
+          ? 'Everything is already backed up.'
+          : `${summary.succeeded} document${summary.succeeded === 1 ? '' : 's'} backed up to Drive.` +
+            (summary.skipped > 0
+              ? ` (${summary.skipped} already up to date.)`
+              : '') +
+            failedNote;
+      Alert.alert('Backup complete', message);
     } catch (err) {
       Alert.alert(
         'Backup failed',
@@ -244,7 +249,7 @@ export default function SettingsScreen({navigation}: Props) {
   function handleClearCache() {
     Alert.alert(
       'Clear cache',
-      'This removes cached exported PDFs. Your saved documents are not affected.',
+      'This removes cached exported PDFs and cached preview thumbnails. Your saved documents are not affected - thumbnails just get regenerated next time you view them.',
       [
         {text: 'Cancel', style: 'cancel'},
         {

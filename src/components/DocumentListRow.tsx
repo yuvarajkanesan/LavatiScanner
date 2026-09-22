@@ -6,6 +6,7 @@ import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { DocumentSummary } from '../types/models';
 import { formatBytes, formatDate, formatTime } from '../utils/format';
+import { isDocumentSynced } from '../services/driveBackup';
 
 interface Props {
   document: DocumentSummary;
@@ -16,6 +17,12 @@ interface Props {
   /** Position in the list — cycles through the app's fun palette so the
    * list reads as colorful/varied rather than every row looking identical. */
   index?: number;
+  /** Shows the Drive sync badge - only when the caller confirmed Google
+   * Drive is actually connected. */
+  showSyncStatus?: boolean;
+  /** Pre-resolved small cached thumbnail - falls back to the document's
+   * full-resolution page file until it's ready. */
+  thumbnailUri?: string;
 }
 
 export default function DocumentListRow({
@@ -25,10 +32,13 @@ export default function DocumentListRow({
   selectionMode,
   selected,
   index = 0,
+  showSyncStatus,
+  thumbnailUri,
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const accentColor = colors.funPalette[index % colors.funPalette.length];
+  const synced = isDocumentSynced(document);
   return (
     <TouchableOpacity
       style={[styles.row, selected && styles.rowSelected]}
@@ -43,7 +53,7 @@ export default function DocumentListRow({
       )}
       {document.thumbnailPath ? (
         <Image
-          source={{ uri: `file://${document.thumbnailPath}` }}
+          source={{ uri: thumbnailUri ?? `file://${document.thumbnailPath}` }}
           style={[styles.thumbnail, { borderColor: `${accentColor}55` }]}
           resizeMode="cover"
         />
@@ -60,6 +70,14 @@ export default function DocumentListRow({
           {formatBytes(document.totalSizeBytes)}
         </Text>
       </View>
+      {showSyncStatus && !selectionMode && (
+        <Icon
+          name={synced ? 'cloud-done' : 'cloud-queue'}
+          size={18}
+          color={synced ? colors.success : colors.textMuted}
+          style={styles.syncIcon}
+        />
+      )}
       {!selectionMode && <Icon name="chevron-right" size={22} color={colors.textMuted} />}
     </TouchableOpacity>
   );
@@ -135,5 +153,8 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     marginTop: 3,
     fontSize: 12,
     color: colors.textMuted,
+  },
+  syncIcon: {
+    marginRight: 6,
   },
 });

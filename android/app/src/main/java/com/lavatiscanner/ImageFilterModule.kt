@@ -118,21 +118,30 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
       promise: Promise
   ) {
     Thread {
+      // Tracked outside the try body (rather than recycled inline at each
+      // step) so the `finally` below can always clean up whatever got as
+      // far as being allocated - without it, an exception partway through
+      // (a malformed matrix, a full disk on the file write, a decode
+      // failure) leaked that bitmap's native memory until GC happened to
+      // finalize it, which compounds fast when errors repeat on retry.
+      var srcBitmap: Bitmap? = null
+      var outBitmap: Bitmap? = null
       try {
         val cleanInput = inputPath.removePrefix("file://")
-        val srcBitmap = decodeSampledBitmap(cleanInput, maxDimension)
+        srcBitmap = decodeSampledBitmap(cleanInput, maxDimension)
 
         val values = FloatArray(20)
         for (i in 0 until 20) {
           values[i] = matrix.getDouble(i).toFloat()
         }
 
-        var outBitmap = Bitmap.createBitmap(srcBitmap.width, srcBitmap.height, Bitmap.Config.ARGB_8888)
+        outBitmap = Bitmap.createBitmap(srcBitmap.width, srcBitmap.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(outBitmap)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         paint.colorFilter = ColorMatrixColorFilter(ColorMatrix(values))
         canvas.drawBitmap(srcBitmap, 0f, 0f, paint)
         srcBitmap.recycle()
+        srcBitmap = null
 
         if (sharpenAmount > 0.0) {
           val sharpened = sharpen(outBitmap, sharpenAmount.toFloat())
@@ -145,11 +154,12 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
           outBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
         }
 
-        outBitmap.recycle()
-
         promise.resolve(cleanOutput)
       } catch (e: Exception) {
         promise.reject("IMAGE_FILTER_ERROR", e.message, e)
+      } finally {
+        srcBitmap?.let { if (!it.isRecycled) it.recycle() }
+        outBitmap?.let { if (!it.isRecycled) it.recycle() }
       }
     }.start()
   }
@@ -220,9 +230,11 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
       promise: Promise
   ) {
     Thread {
+      var srcBitmap: Bitmap? = null
+      var outBitmap: Bitmap? = null
       try {
         val cleanInput = inputPath.removePrefix("file://")
-        val srcBitmap = decodeSampledBitmap(cleanInput, 0)
+        srcBitmap = decodeSampledBitmap(cleanInput, 0)
 
         val src = FloatArray(8)
         for (i in 0 until 8) {
@@ -256,7 +268,7 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
           throw IllegalStateException("Could not compute perspective transform")
         }
 
-        val outBitmap = Bitmap.createBitmap(outWidth, outHeight, Bitmap.Config.ARGB_8888)
+        outBitmap = Bitmap.createBitmap(outWidth, outHeight, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(outBitmap)
         canvas.drawColor(Color.WHITE)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -267,12 +279,12 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
           outBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
         }
 
-        srcBitmap.recycle()
-        outBitmap.recycle()
-
         promise.resolve(cleanOutput)
       } catch (e: Exception) {
         promise.reject("IMAGE_WARP_ERROR", e.message, e)
+      } finally {
+        srcBitmap?.let { if (!it.isRecycled) it.recycle() }
+        outBitmap?.let { if (!it.isRecycled) it.recycle() }
       }
     }.start()
   }
@@ -290,11 +302,13 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
   @ReactMethod
   fun detectDocumentCorners(inputPath: String, promise: Promise) {
     Thread {
+      var decoded: Bitmap? = null
+      var small: Bitmap? = null
       try {
         val cleanInput = inputPath.removePrefix("file://")
-        val decoded = decodeSampledBitmap(cleanInput, DETECT_SIZE)
+        decoded = decodeSampledBitmap(cleanInput, DETECT_SIZE)
         val scale = DETECT_SIZE.toFloat() / max(decoded.width, decoded.height)
-        val small =
+        small =
             if (scale < 1f) {
               Bitmap.createScaledBitmap(
                   decoded,
@@ -306,12 +320,14 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
             }
         if (small !== decoded) {
           decoded.recycle()
+          decoded = null
         }
         val w = small.width
         val h = small.height
         val px = IntArray(w * h)
         small.getPixels(px, 0, w, 0, 0, w, h)
         small.recycle()
+        small = null
 
         val gray = IntArray(w * h)
         for (i in px.indices) {
@@ -333,6 +349,9 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         }
       } catch (e: Exception) {
         promise.reject("DOC_DETECT_ERROR", e.message, e)
+      } finally {
+        decoded?.let { if (!it.isRecycled) it.recycle() }
+        small?.let { if (!it.isRecycled) it.recycle() }
       }
     }.start()
   }

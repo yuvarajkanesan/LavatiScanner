@@ -5,7 +5,14 @@ import {getFilterMatrix, getSharpenAmount} from './filters';
 
 const {ImageFilterModule} = NativeModules;
 
-const CACHE_DIR = `${RNFS.CachesDirectoryPath}/filter-preview`;
+/** Exported so `fileStorage.clearCaches` can reclaim it too - this
+ * directory only ever grows (every unique source-file+filter/thumbnail
+ * combination gets its own cached file, never pruned as pages are edited or
+ * documents deleted), so without a way to clear it users would have no
+ * recourse but to uninstall or wait for the OS to evict it under storage
+ * pressure. */
+export const FILTER_PREVIEW_CACHE_DIR = `${RNFS.CachesDirectoryPath}/filter-preview`;
+const CACHE_DIR = FILTER_PREVIEW_CACHE_DIR;
 let cacheDirReady: Promise<void> | null = null;
 
 async function ensureCacheDir(): Promise<void> {
@@ -116,6 +123,46 @@ export async function compressImage(
     0,
     0,
   );
+}
+
+/** Small quality for `getThumbnail` output - it's only ever shown at a few
+ * hundred pixels (document list cards/rows, page grid), so a lower JPEG
+ * quality is invisible there and keeps the cached files tiny. */
+const THUMBNAIL_QUALITY = 80;
+
+/**
+ * Cached, downsized (max `PREVIEW_MAX_DIMENSION`) copy of a page image for
+ * use as a thumbnail - document list cards/rows, the document's page grid.
+ * This is the same fix already applied to the filmstrip/preview strip
+ * (`renderFilterPreview`, above): those UIs only ever show a few hundred
+ * pixels, but without this, RN/Android decodes the full sensor-resolution
+ * scan just to shrink it down, and doing that for every visible row in a
+ * scrolling list is what makes the whole app feel sluggish - list scroll,
+ * and indirectly everything else via the GC pressure it creates. Cached by
+ * a hash of the source path, so repeat renders (re-scrolling, revisiting a
+ * screen) are a disk-exists check, not a re-decode. Safe to cache
+ * indefinitely: every edit (crop/rotate/filter) writes its result to a new
+ * file path (`persistPageImage`), never overwrites one in place.
+ */
+export async function getThumbnail(sourcePath: string): Promise<string> {
+  await ensureCacheDir();
+  const cleanSource = sourcePath.replace('file://', '');
+  const outputPath = `${CACHE_DIR}/${hash(`${cleanSource}:thumb`)}.jpg`;
+
+  const exists = await RNFS.exists(outputPath);
+  if (exists) {
+    return `file://${outputPath}`;
+  }
+
+  const resultPath = await ImageFilterModule.applyColorMatrix(
+    cleanSource,
+    outputPath,
+    IDENTITY_MATRIX,
+    THUMBNAIL_QUALITY,
+    0,
+    PREVIEW_MAX_DIMENSION,
+  );
+  return `file://${resultPath}`;
 }
 
 export interface QuadCorners {

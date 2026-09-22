@@ -2,6 +2,11 @@ import SQLite, {SQLiteDatabase, ResultSet} from 'react-native-sqlite-storage';
 import RNFS from 'react-native-fs';
 import {generateId} from '../utils/ids';
 import {Document, DocumentSummary, Folder, Page} from '../types/models';
+import {
+  cancelScheduledSync,
+  scheduleDocumentSync,
+  scheduleDriveDelete,
+} from '../services/syncScheduler';
 
 SQLite.enablePromise(true);
 
@@ -183,6 +188,7 @@ export async function renameDocument(id: string, name: string): Promise<void> {
     'UPDATE documents SET name = ?, updatedAt = ? WHERE id = ?;',
     [name, Date.now(), id],
   );
+  scheduleDocumentSync(id);
 }
 
 export async function moveDocumentToFolder(
@@ -198,8 +204,11 @@ export async function moveDocumentToFolder(
 
 export async function deleteDocument(id: string): Promise<void> {
   const db = await getDatabase();
+  const existing = await getDocument(id);
+  cancelScheduledSync(id);
   await db.executeSql('DELETE FROM pages WHERE docId = ?;', [id]);
   await db.executeSql('DELETE FROM documents WHERE id = ?;', [id]);
+  scheduleDriveDelete(existing?.driveFileId ?? null);
 }
 
 export async function touchDocument(id: string): Promise<void> {
@@ -208,6 +217,7 @@ export async function touchDocument(id: string): Promise<void> {
     Date.now(),
     id,
   ]);
+  scheduleDocumentSync(id);
 }
 
 export async function getDocument(id: string): Promise<Document | null> {
@@ -319,6 +329,17 @@ export async function addPage(
   return page;
 }
 
+/** Looks up the parent document ID for a page, so page-level edits (which
+ * only take a page ID) can still schedule a sync of the right document. */
+async function getPageDocId(pageId: string): Promise<string | null> {
+  const db = await getDatabase();
+  const [result] = await db.executeSql(
+    'SELECT docId FROM pages WHERE id = ?;',
+    [pageId],
+  );
+  return result.rows.length > 0 ? result.rows.item(0).docId : null;
+}
+
 export async function setPageName(
   id: string,
   pageName: string | null,
@@ -328,6 +349,10 @@ export async function setPageName(
     pageName,
     id,
   ]);
+  const docId = await getPageDocId(id);
+  if (docId) {
+    scheduleDocumentSync(docId);
+  }
 }
 
 export async function setPageNote(
@@ -336,6 +361,10 @@ export async function setPageNote(
 ): Promise<void> {
   const db = await getDatabase();
   await db.executeSql('UPDATE pages SET note = ? WHERE id = ?;', [note, id]);
+  const docId = await getPageDocId(id);
+  if (docId) {
+    scheduleDocumentSync(docId);
+  }
 }
 
 export async function listPages(docId: string): Promise<Page[]> {
@@ -379,11 +408,19 @@ export async function setPageFilePath(
     filePath,
     id,
   ]);
+  const docId = await getPageDocId(id);
+  if (docId) {
+    scheduleDocumentSync(docId);
+  }
 }
 
 export async function setPageOcrText(id: string, text: string): Promise<void> {
   const db = await getDatabase();
   await db.executeSql('UPDATE pages SET ocrText = ? WHERE id = ?;', [text, id]);
+  const docId = await getPageDocId(id);
+  if (docId) {
+    scheduleDocumentSync(docId);
+  }
 }
 
 /** `blocksJson` is a JSON-serialized array of ratio-space OCR blocks (see
@@ -398,6 +435,10 @@ export async function setPageOcrBlocks(
     blocksJson,
     id,
   ]);
+  const docId = await getPageDocId(id);
+  if (docId) {
+    scheduleDocumentSync(docId);
+  }
 }
 
 async function reindexPages(docId: string): Promise<void> {

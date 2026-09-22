@@ -16,6 +16,9 @@ import {
   renameDocument,
 } from '../db/database';
 import {deleteDocumentFiles} from '../services/fileStorage';
+import {isGoogleDriveSignedIn} from '../services/googleDrive';
+import {getThumbnail} from '../services/nativeImageFilter';
+import {mapWithConcurrency} from '../utils/concurrency';
 import DocumentCard from '../components/DocumentCard';
 import DocumentListRow from '../components/DocumentListRow';
 import Fab from '../components/Fab';
@@ -43,6 +46,8 @@ export default function FolderDetailScreen({navigation, route}: Props) {
   const [movingDoc, setMovingDoc] = useState<DocumentSummary | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [driveConnected, setDriveConnected] = useState(false);
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
 
   useEffect(() => {
     AsyncStorage.getItem(VIEW_MODE_KEY).then(saved => {
@@ -65,8 +70,28 @@ export default function FolderDetailScreen({navigation, route}: Props) {
     ]);
     setFolder(folders.find(f => f.id === folderId) ?? null);
     setDocuments(docs);
+    setDriveConnected(isGoogleDriveSignedIn());
     setLoading(false);
+    resolveThumbnails(docs);
   }, [folderId]);
+
+  const resolveThumbnails = useCallback(async (docs: DocumentSummary[]) => {
+    const targets = docs.filter(d => d.thumbnailPath);
+    const resolved = await mapWithConcurrency(targets, 4, async doc => {
+      try {
+        return [doc.id, await getThumbnail(doc.thumbnailPath as string)] as const;
+      } catch {
+        return [doc.id, `file://${doc.thumbnailPath}`] as const;
+      }
+    });
+    setThumbnails(prev => {
+      const next = {...prev};
+      for (const [id, uri] of resolved) {
+        next[id] = uri;
+      }
+      return next;
+    });
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
@@ -169,6 +194,8 @@ export default function FolderDetailScreen({navigation, route}: Props) {
               }
               onLongPress={() => handleLongPress(item)}
               widthPercent={cardWidthPercent}
+              showSyncStatus={driveConnected}
+              thumbnailUri={thumbnails[item.id]}
             />
           )}
         />
@@ -194,6 +221,8 @@ export default function FolderDetailScreen({navigation, route}: Props) {
                 navigation.navigate('DocumentDetail', {docId: item.id})
               }
               onLongPress={() => handleLongPress(item)}
+              showSyncStatus={driveConnected}
+              thumbnailUri={thumbnails[item.id]}
             />
           )}
         />

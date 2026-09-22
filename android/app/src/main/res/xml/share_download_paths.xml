@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Overrides react-native-share's own default of this same resource name
+  (node_modules/react-native-share/android/src/main/res/xml/share_download_paths.xml),
+  which declares `<root-path path="." />` - granting its FileProvider the
+  ability to serve a content:// URI for ANY file the app process can read,
+  not just the ones it actually shares. Android resource merging prefers
+  the app module's own resource over a library's for the same name, so this
+  file replaces it at build time.
+
+  Scoped to the two directories this app ever actually shares from: scanned
+  pages/exported PDFs under `RNFS.DocumentDirectoryPath` (`getFilesDir()`,
+  `files-path`) and collage/compression temp output under
+  `RNFS.CachesDirectoryPath` (`getCacheDir()`, `cache-path`). Both are still
+  private, per-app sandboxed directories - the point is only to stop a
+  content:// URI from being mintable for anything OUTSIDE this app's own
+  storage (another app's private data, a system path, anywhere on
+  external storage), which `root-path path="."` uniquely allowed.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="lavati_shared_files" path="." />
+    <cache-path name="lavati_shared_cache" path="." />
+</paths>

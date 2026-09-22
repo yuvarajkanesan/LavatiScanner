@@ -40,6 +40,9 @@ import {
   buildPdfFromImages,
   parsePageOcrBlocks,
 } from '../services/pdfExport';
+import {isGoogleDriveSignedIn} from '../services/googleDrive';
+import {getThumbnail} from '../services/nativeImageFilter';
+import {mapWithConcurrency} from '../utils/concurrency';
 import DocumentCard from '../components/DocumentCard';
 import DocumentListRow from '../components/DocumentListRow';
 import FolderPickerModal from '../components/FolderPickerModal';
@@ -150,6 +153,8 @@ export default function HomeScreen({navigation}: Props) {
   const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
     new Set(),
   );
+  const [driveConnected, setDriveConnected] = useState(false);
+  const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [deletableFolderId, setDeletableFolderId] = useState<string | null>(
     null,
   );
@@ -300,7 +305,33 @@ export default function HomeScreen({navigation}: Props) {
     ]);
     setDocuments(docs);
     setFolders(folderList);
+    setDriveConnected(isGoogleDriveSignedIn());
     setLoading(false);
+    resolveThumbnails(docs);
+  }, []);
+
+  /** Resolves each document's small cached thumbnail in the background
+   * (never blocks the screen from showing) - see `getThumbnail`'s doc
+   * comment for why this exists: without it every card/row decodes a
+   * full-resolution scan just to show it a few hundred pixels wide, which
+   * is the main thing that made scrolling (and everything else, via GC
+   * pressure) feel slow. */
+  const resolveThumbnails = useCallback(async (docs: DocumentSummary[]) => {
+    const targets = docs.filter(d => d.thumbnailPath);
+    const resolved = await mapWithConcurrency(targets, 4, async doc => {
+      try {
+        return [doc.id, await getThumbnail(doc.thumbnailPath as string)] as const;
+      } catch {
+        return [doc.id, `file://${doc.thumbnailPath}`] as const;
+      }
+    });
+    setThumbnails(prev => {
+      const next = {...prev};
+      for (const [id, uri] of resolved) {
+        next[id] = uri;
+      }
+      return next;
+    });
   }, []);
 
   useFocusEffect(
@@ -609,6 +640,8 @@ export default function HomeScreen({navigation}: Props) {
               selectionMode={selectionMode}
               selected={selectedIds.includes(item.id)}
               widthPercent={cardWidthPercent}
+              showSyncStatus={driveConnected}
+              thumbnailUri={thumbnails[item.id]}
             />
           )}
         />
@@ -634,6 +667,8 @@ export default function HomeScreen({navigation}: Props) {
               onLongPress={() => handleCardLongPress(item)}
               selectionMode={selectionMode}
               selected={selectedIds.includes(item.id)}
+              showSyncStatus={driveConnected}
+              thumbnailUri={thumbnails[item.id]}
             />
           )}
         />
@@ -715,6 +750,8 @@ export default function HomeScreen({navigation}: Props) {
               onLongPress={() => handleCardLongPress(item)}
               selectionMode={selectionMode}
               selected={selectedIds.includes(item.id)}
+              showSyncStatus={driveConnected}
+              thumbnailUri={thumbnails[item.id]}
             />
           )}
         />

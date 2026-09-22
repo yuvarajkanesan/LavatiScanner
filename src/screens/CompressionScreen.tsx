@@ -88,6 +88,12 @@ export default function CompressionScreen() {
         `${selectedDoc.name}_compressed_${scanTimestampName()}`,
         pages.map(p => parsePageOcrBlocks(p.ocrBlocks)),
       );
+      // The per-page compressed JPGs are only an intermediate step toward
+      // the PDF - once it's built, leaving them in the cache dir would leak
+      // one file per page on every compression run.
+      for (const path of compressedPaths) {
+        RNFS.unlink(path).catch(() => undefined);
+      }
       const stat = await RNFS.stat(pdfPath);
       setResultPath(pdfPath);
       setResultSize(stat.size);
