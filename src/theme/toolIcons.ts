@@ -33,7 +33,7 @@ export const toolIcons: Record<
   // These icon names are MaterialIcons glyphs (matching the screen's
   // pre-existing icon strings) — must pin family: 'material' since
   // FeatureBadge defaults to MaterialCommunityIcons, which doesn't have them.
-  docs: {icon: 'description', family: 'material', color: '#3B82F6'},
+  docs: {icon: 'document-scanner', family: 'material', color: '#3B82F6'},
   idcard: {icon: 'badge', family: 'material', color: '#8B5CF6'},
   book: {icon: 'menu-book', family: 'material', color: '#F59E0B'},
   qrcode: {icon: 'qr-code-scanner', family: 'material', color: '#0EA5A5'},

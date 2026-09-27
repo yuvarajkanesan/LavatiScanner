@@ -8,6 +8,7 @@ import {IdCardSubMode} from '../constants/idCardModes';
 
 export type MainTabParamList = {
   Home: undefined;
+  AllFiles: undefined;
   Tools: undefined;
   Settings: undefined;
 };
@@ -26,7 +27,6 @@ export type RootStackParamList = {
   Trim: {rawUri: string; pageId?: string};
   Filter: {pageId: string} | undefined;
   DocumentDetail: {docId: string};
-  Folders: undefined;
   FolderDetail: {folderId: string};
   IdCardScan:
     | {

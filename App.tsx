@@ -8,6 +8,7 @@ import {ActivityIndicator, StatusBar, StyleSheet, View} from 'react-native';
 import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import RootNavigator from './src/navigation/RootNavigator';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import {ScanSessionProvider} from './src/context/ScanSessionContext';
 import {ThemeProvider, useTheme} from './src/theme/ThemeContext';
 import {FontScaleProvider} from './src/theme/FontScaleContext';
@@ -34,19 +35,21 @@ export default function App(): React.JSX.Element {
   }
 
   return (
-    <GestureHandlerRootView style={styles.flex}>
-      <SafeAreaProvider>
-        <ThemeProvider>
-          <FontScaleProvider>
-            <ScanSessionProvider>
-              <ThemedApp />
-              <TextPromptHost />
-              <CustomAlertHost />
-            </ScanSessionProvider>
-          </FontScaleProvider>
-        </ThemeProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <ErrorBoundary>
+      <GestureHandlerRootView style={styles.flex}>
+        <SafeAreaProvider>
+          <ThemeProvider>
+            <FontScaleProvider>
+              <ScanSessionProvider>
+                <ThemedApp />
+                <TextPromptHost />
+                <CustomAlertHost />
+              </ScanSessionProvider>
+            </FontScaleProvider>
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }
 

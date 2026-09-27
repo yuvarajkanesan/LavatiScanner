@@ -16,7 +16,10 @@ import com.facebook.react.bridge.ReadableArray
 import com.facebook.react.bridge.Promise
 import java.io.File
 import java.io.FileOutputStream
+import kotlin.math.abs
+import kotlin.math.floor
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
@@ -33,8 +36,12 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
   override fun getName() = "ImageFilterModule"
 
   private companion object {
-    /** Longest side (px) the document detector works at - plenty to find a page's edges, cheap to scan. */
-    const val DETECT_SIZE = 400
+    /** Longest side (px) the document detector works at. Higher than a bare
+     * "find a rough rectangle" needs, because these fractional corners get
+     * scaled up and fed straight into `warpPerspective` at full sensor
+     * resolution afterward - imprecision here is what shows up as a
+     * slightly crooked or clipped final scan, not just a fuzzy preview. */
+    const val DETECT_SIZE = 640
   }
 
   /**
@@ -213,6 +220,435 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
   }
 
   /**
+   * Renders one of the "real" scan filters (background-division shadow
+   * removal, CLAHE, adaptive threshold, etc. - see `applyFilterPixels`)
+   * rather than a linear color matrix. These aren't expressible as a 4x5
+   * matrix, so unlike `applyColorMatrix` this always walks pixel arrays
+   * directly. Same decode/downsample/encode shape as `applyColorMatrix`
+   * otherwise, including running off the UI thread and recycling bitmaps
+   * eagerly so a mid-pipeline exception can't leak native memory.
+   */
+  @ReactMethod
+  fun applyScanFilter(
+      inputPath: String,
+      outputPath: String,
+      filterId: String,
+      quality: Int,
+      maxDimension: Int,
+      promise: Promise
+  ) {
+    Thread {
+      var srcBitmap: Bitmap? = null
+      var outBitmap: Bitmap? = null
+      try {
+        val cleanInput = inputPath.removePrefix("file://")
+        srcBitmap = decodeSampledBitmap(cleanInput, maxDimension)
+        val width = srcBitmap.width
+        val height = srcBitmap.height
+        val pixels = IntArray(width * height)
+        srcBitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        srcBitmap.recycle()
+        srcBitmap = null
+
+        val resultPixels = applyFilterPixels(pixels, width, height, filterId)
+        outBitmap = Bitmap.createBitmap(resultPixels, width, height, Bitmap.Config.ARGB_8888)
+
+        val cleanOutput = outputPath.removePrefix("file://")
+        FileOutputStream(File(cleanOutput)).use { out ->
+          outBitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+        }
+        promise.resolve(cleanOutput)
+      } catch (e: Exception) {
+        promise.reject("SCAN_FILTER_ERROR", e.message, e)
+      } finally {
+        srcBitmap?.let { if (!it.isRecycled) it.recycle() }
+        outBitmap?.let { if (!it.isRecycled) it.recycle() }
+      }
+    }.start()
+  }
+
+  /**
+   * Dispatches to each scan filter's pixel pipeline. Every branch keeps
+   * `sharpen` (the same Laplacian unsharp mask as the color-matrix path)
+   * somewhere in its chain — text/image crispness must never regress just
+   * because a filter now does more than a linear tone adjustment. The
+   * binary filters (bw/lighten/eco) sharpen the grayscale channel *before*
+   * thresholding specifically: thresholding snaps already-soft JPEG pixels
+   * at a letter's edge toward one extreme, eroding thin strokes, exactly
+   * the failure mode the old color-matrix "bw" filter's sharpen-first
+   * ordering already guarded against (see `getSharpenAmount`'s history).
+   */
+  private fun applyFilterPixels(pixels: IntArray, w: Int, h: Int, filterId: String): IntArray {
+    // Radius for the "smooth background" estimate (shading/shadow), scaled
+    // to image size so it behaves the same at preview and full-bake
+    // resolution - a fixed pixel radius would over- or under-smooth
+    // depending on how much the source got downsampled first.
+    val bgRadius = max(15, (min(w, h) * 0.035f).toInt())
+    val localMeanRadius = max(10, (min(w, h) * 0.02f).toInt())
+
+    return when (filterId) {
+      "auto" -> {
+        val r = divideByBackground(extractChannel(pixels, 16), w, h, bgRadius)
+        val g = divideByBackground(extractChannel(pixels, 8), w, h, bgRadius)
+        val b = divideByBackground(extractChannel(pixels, 0), w, h, bgRadius)
+        var out = combineRGB(r, g, b)
+        out = contrastBoost(out, 1.15f)
+        out = boostSaturation(out, 1.2f)
+        sharpenARGB(out, w, h, 0.3f)
+      }
+      "enhanced" -> {
+        val r0 = divideByBackground(extractChannel(pixels, 16), w, h, bgRadius)
+        val g0 = divideByBackground(extractChannel(pixels, 8), w, h, bgRadius)
+        val b0 = divideByBackground(extractChannel(pixels, 0), w, h, bgRadius)
+        val divided = combineRGB(r0, g0, b0)
+        val luma = toGray(divided)
+        val claheLuma = clahe(luma, w, h, 8, 8, 3.0)
+        val recombined = IntArray(pixels.size)
+        for (i in pixels.indices) {
+          val l0 = max(1, luma[i])
+          // Clamped: an unclamped ratio explodes for near-black source
+          // pixels (l0 -> 1) and blows shadow regions out into colorful
+          // noise instead of the intended local-contrast lift.
+          val ratio = (claheLuma[i].toFloat() / l0).coerceIn(0.2f, 3.0f)
+          val p = divided[i]
+          val r = (((p shr 16) and 0xFF) * ratio).toInt().coerceIn(0, 255)
+          val g = (((p shr 8) and 0xFF) * ratio).toInt().coerceIn(0, 255)
+          val b = ((p and 0xFF) * ratio).toInt().coerceIn(0, 255)
+          recombined[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        val saturated = boostSaturation(recombined, 1.12f)
+        sharpenARGB(saturated, w, h, 0.35f)
+      }
+      "grayscale" -> {
+        val gray = toGray(pixels)
+        val claheGray = clahe(gray, w, h, 8, 8, 2.5)
+        sharpenARGB(grayToARGB(claheGray), w, h, 0.25f)
+      }
+      "bw" -> {
+        val gray = sharpenGray(toGray(pixels), w, h, 0.4f)
+        val localMean = boxBlur(gray, w, h, localMeanRadius)
+        val out = IntArray(gray.size)
+        for (i in gray.indices) {
+          out[i] = if (gray[i] < localMean[i] - 10) 0 else 255
+        }
+        grayToARGB(out)
+      }
+      "lighten" -> {
+        val gray = sharpenGray(toGray(pixels), w, h, 0.35f)
+        val divided = divideByBackground(gray, w, h, bgRadius)
+        val threshold = otsuThreshold(divided)
+        val out = IntArray(divided.size)
+        for (i in divided.indices) {
+          out[i] = if (divided[i] > threshold) 255 else 0
+        }
+        grayToARGB(out)
+      }
+      "shadowRemoval" -> {
+        val gray = toGray(pixels)
+        val dilateRadius = max(2, (min(w, h) * 0.004f).toInt())
+        val dilated = maxFilter(gray, w, h, dilateRadius)
+        // A large box blur stands in for `medianBlur(21)` here: both are
+        // just estimating the smooth paper/shadow background so it can be
+        // divided out, and a box blur at this radius is visually
+        // equivalent for that purpose while being far cheaper than a true
+        // windowed median at full scan resolution.
+        val bg = boxBlur(dilated, w, h, max(15, (min(w, h) * 0.03f).toInt()))
+        val diff = IntArray(gray.size)
+        for (i in gray.indices) {
+          diff[i] = 255 - abs(gray[i] - bg[i])
+        }
+        sharpenARGB(grayToARGB(normalizeGray(diff)), w, h, 0.25f)
+      }
+      "eco" -> {
+        val gray = sharpenGray(toGray(pixels), w, h, 0.4f)
+        val localMean = boxBlur(gray, w, h, localMeanRadius)
+        val out = IntArray(gray.size)
+        for (i in gray.indices) {
+          out[i] = if (gray[i] < localMean[i] - 28) 0 else 255
+        }
+        grayToARGB(out)
+      }
+      "sharpen" -> sharpenARGB(pixels, w, h, 0.7f)
+      "invert" -> invertPixels(pixels)
+      else -> pixels
+    }
+  }
+
+  private fun extractChannel(pixels: IntArray, shift: Int): IntArray {
+    val out = IntArray(pixels.size)
+    for (i in pixels.indices) out[i] = (pixels[i] shr shift) and 0xFF
+    return out
+  }
+
+  private fun combineRGB(r: IntArray, g: IntArray, b: IntArray): IntArray {
+    val out = IntArray(r.size)
+    for (i in r.indices) {
+      out[i] = (0xFF shl 24) or (r[i].coerceIn(0, 255) shl 16) or
+          (g[i].coerceIn(0, 255) shl 8) or b[i].coerceIn(0, 255)
+    }
+    return out
+  }
+
+  private fun toGray(pixels: IntArray): IntArray {
+    val out = IntArray(pixels.size)
+    for (i in pixels.indices) {
+      val p = pixels[i]
+      out[i] = (((p shr 16) and 0xFF) * 299 + ((p shr 8) and 0xFF) * 587 + (p and 0xFF) * 114) / 1000
+    }
+    return out
+  }
+
+  private fun grayToARGB(gray: IntArray): IntArray {
+    val out = IntArray(gray.size)
+    for (i in gray.indices) {
+      val v = gray[i].coerceIn(0, 255)
+      out[i] = (0xFF shl 24) or (v shl 16) or (v shl 8) or v
+    }
+    return out
+  }
+
+  private fun invertPixels(pixels: IntArray): IntArray {
+    val out = IntArray(pixels.size)
+    for (i in pixels.indices) {
+      val p = pixels[i]
+      val r = 255 - ((p shr 16) and 0xFF)
+      val g = 255 - ((p shr 8) and 0xFF)
+      val b = 255 - (p and 0xFF)
+      out[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+    }
+    return out
+  }
+
+  private fun contrastBoost(pixels: IntArray, factor: Float): IntArray {
+    val out = IntArray(pixels.size)
+    for (i in pixels.indices) {
+      val p = pixels[i]
+      val r = ((((p shr 16) and 0xFF) - 128) * factor + 128).toInt().coerceIn(0, 255)
+      val g = ((((p shr 8) and 0xFF) - 128) * factor + 128).toInt().coerceIn(0, 255)
+      val b = (((p and 0xFF) - 128) * factor + 128).toInt().coerceIn(0, 255)
+      out[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+    }
+    return out
+  }
+
+  private fun boostSaturation(pixels: IntArray, factor: Float): IntArray {
+    val out = IntArray(pixels.size)
+    for (i in pixels.indices) {
+      val p = pixels[i]
+      val r = (p shr 16) and 0xFF
+      val g = (p shr 8) and 0xFF
+      val b = p and 0xFF
+      val gray = (r * 299 + g * 587 + b * 114) / 1000f
+      val nr = (gray + (r - gray) * factor).toInt().coerceIn(0, 255)
+      val ng = (gray + (g - gray) * factor).toInt().coerceIn(0, 255)
+      val nb = (gray + (b - gray) * factor).toInt().coerceIn(0, 255)
+      out[i] = (0xFF shl 24) or (nr shl 16) or (ng shl 8) or nb
+    }
+    return out
+  }
+
+  /** Divides `channel` by its own heavily-blurred copy (the paper's shading/
+   * shadow) and rescales to 0..255 - the standard trick for flattening
+   * uneven lighting on a photographed page before thresholding or contrast
+   * work, without touching the underlying real content. */
+  private fun divideByBackground(channel: IntArray, w: Int, h: Int, radius: Int): IntArray {
+    val bg = boxBlur(channel, w, h, radius)
+    val out = IntArray(channel.size)
+    for (i in channel.indices) {
+      val b = max(1, bg[i])
+      out[i] = ((channel[i].toDouble() / b) * 255.0).toInt().coerceIn(0, 255)
+    }
+    return out
+  }
+
+  private fun normalizeGray(gray: IntArray): IntArray {
+    var mn = 255
+    var mx = 0
+    for (v in gray) {
+      if (v < mn) mn = v
+      if (v > mx) mx = v
+    }
+    if (mx <= mn) return gray
+    val range = (mx - mn).toFloat()
+    val out = IntArray(gray.size)
+    for (i in gray.indices) {
+      out[i] = (((gray[i] - mn) / range) * 255f).toInt().coerceIn(0, 255)
+    }
+    return out
+  }
+
+  /** Separable grayscale max-filter (morphological dilation) with a square window. */
+  private fun maxFilter(src: IntArray, w: Int, h: Int, r: Int): IntArray {
+    val tmp = IntArray(w * h)
+    for (y in 0 until h) {
+      val row = y * w
+      for (x in 0 until w) {
+        var m = 0
+        val lo = max(0, x - r)
+        val hi = min(w - 1, x + r)
+        for (xx in lo..hi) {
+          if (src[row + xx] > m) m = src[row + xx]
+        }
+        tmp[row + x] = m
+      }
+    }
+    val out = IntArray(w * h)
+    for (x in 0 until w) {
+      for (y in 0 until h) {
+        var m = 0
+        val lo = max(0, y - r)
+        val hi = min(h - 1, y + r)
+        for (yy in lo..hi) {
+          val v = tmp[yy * w + x]
+          if (v > m) m = v
+        }
+        out[y * w + x] = m
+      }
+    }
+    return out
+  }
+
+  /**
+   * Contrast-Limited Adaptive Histogram Equalization on a single channel:
+   * per-tile histogram (clipped and redistributed, so a tile that's almost
+   * all one shade can't blow out into noise), then bilinear interpolation
+   * of each pixel's four nearest tile mappings so tile boundaries don't
+   * show up as visible seams.
+   */
+  private fun clahe(channel: IntArray, w: Int, h: Int, tilesX: Int, tilesY: Int, clipLimit: Double): IntArray {
+    val tileW = (w + tilesX - 1) / tilesX
+    val tileH = (h + tilesY - 1) / tilesY
+    val maps = Array(tilesY) { arrayOfNulls<IntArray>(tilesX) }
+
+    for (ty in 0 until tilesY) {
+      for (tx in 0 until tilesX) {
+        val x0 = tx * tileW
+        val y0 = ty * tileH
+        val x1 = min(w, x0 + tileW)
+        val y1 = min(h, y0 + tileH)
+        val hist = IntArray(256)
+        var count = 0
+        for (y in y0 until y1) {
+          val row = y * w
+          for (x in x0 until x1) {
+            hist[channel[row + x].coerceIn(0, 255)]++
+            count++
+          }
+        }
+        if (count == 0) {
+          maps[ty][tx] = IntArray(256) { it }
+          continue
+        }
+        val clipVal = max(1, (clipLimit * count / 256).toInt())
+        var excess = 0
+        for (i in 0..255) {
+          if (hist[i] > clipVal) {
+            excess += hist[i] - clipVal
+            hist[i] = clipVal
+          }
+        }
+        val redistribute = excess / 256
+        for (i in 0..255) hist[i] += redistribute
+        val map = IntArray(256)
+        var sum = 0
+        for (i in 0..255) {
+          sum += hist[i]
+          map[i] = ((sum.toDouble() / count) * 255.0).toInt().coerceIn(0, 255)
+        }
+        maps[ty][tx] = map
+      }
+    }
+
+    val out = IntArray(w * h)
+    for (y in 0 until h) {
+      val fy = (y - tileH / 2.0) / tileH
+      var ty0 = floor(fy).toInt()
+      var wy = fy - ty0
+      if (ty0 < 0) {
+        ty0 = 0
+        wy = 0.0
+      }
+      var ty1 = (ty0 + 1).coerceAtMost(tilesY - 1)
+      ty0 = ty0.coerceAtMost(tilesY - 1)
+      for (x in 0 until w) {
+        val fx = (x - tileW / 2.0) / tileW
+        var tx0 = floor(fx).toInt()
+        var wx = fx - tx0
+        if (tx0 < 0) {
+          tx0 = 0
+          wx = 0.0
+        }
+        var tx1 = (tx0 + 1).coerceAtMost(tilesX - 1)
+        tx0 = tx0.coerceAtMost(tilesX - 1)
+
+        val v = channel[y * w + x].coerceIn(0, 255)
+        val v00 = maps[ty0][tx0]!![v]
+        val v01 = maps[ty0][tx1]!![v]
+        val v10 = maps[ty1][tx0]!![v]
+        val v11 = maps[ty1][tx1]!![v]
+        val top = v00 + (v01 - v00) * wx
+        val bottom = v10 + (v11 - v10) * wx
+        out[y * w + x] = (top + (bottom - top) * wy).toInt().coerceIn(0, 255)
+      }
+    }
+    return out
+  }
+
+  /** Single-channel version of `sharpenChannel`'s Laplacian unsharp mask - used
+   * on a plain grayscale array instead of a packed ARGB bitmap. */
+  private fun sharpenGray(gray: IntArray, w: Int, h: Int, amount: Float): IntArray {
+    val out = IntArray(w * h)
+    val center = 1f + 4f * amount
+    val edge = -amount
+    for (y in 0 until h) {
+      val yUp = if (y > 0) y - 1 else y
+      val yDown = if (y < h - 1) y + 1 else y
+      val rowOffset = y * w
+      for (x in 0 until w) {
+        val xLeft = if (x > 0) x - 1 else x
+        val xRight = if (x < w - 1) x + 1 else x
+        out[rowOffset + x] = sharpenChannel(
+            center, edge,
+            gray[rowOffset + x], gray[yUp * w + x], gray[yDown * w + x],
+            gray[rowOffset + xLeft], gray[rowOffset + xRight])
+      }
+    }
+    return out
+  }
+
+  /** Same Laplacian unsharp mask as `sharpen(Bitmap, Float)`, operating on a
+   * packed ARGB pixel array so the new filter pipeline never has to round-trip
+   * through a Bitmap just to sharpen. */
+  private fun sharpenARGB(pixels: IntArray, w: Int, h: Int, amount: Float): IntArray {
+    val out = IntArray(w * h)
+    val center = 1f + 4f * amount
+    val edge = -amount
+    for (y in 0 until h) {
+      val yUp = if (y > 0) y - 1 else y
+      val yDown = if (y < h - 1) y + 1 else y
+      val rowOffset = y * w
+      for (x in 0 until w) {
+        val xLeft = if (x > 0) x - 1 else x
+        val xRight = if (x < w - 1) x + 1 else x
+
+        val pC = pixels[rowOffset + x]
+        val pU = pixels[yUp * w + x]
+        val pD = pixels[yDown * w + x]
+        val pL = pixels[rowOffset + xLeft]
+        val pR = pixels[rowOffset + xRight]
+
+        val a = pC ushr 24 and 0xFF
+        val r = sharpenChannel(center, edge, pC shr 16 and 0xFF, pU shr 16 and 0xFF, pD shr 16 and 0xFF, pL shr 16 and 0xFF, pR shr 16 and 0xFF)
+        val g = sharpenChannel(center, edge, pC shr 8 and 0xFF, pU shr 8 and 0xFF, pD shr 8 and 0xFF, pL shr 8 and 0xFF, pR shr 8 and 0xFF)
+        val b = sharpenChannel(center, edge, pC and 0xFF, pU and 0xFF, pD and 0xFF, pL and 0xFF, pR and 0xFF)
+
+        out[rowOffset + x] = (a shl 24) or (r shl 16) or (g shl 8) or b
+      }
+    }
+    return out
+  }
+
+  /**
    * Straightens a document photographed at an angle: maps the 4 corners the
    * user dragged onto the actual page edges (in source-image pixel space,
    * ordered top-left/top-right/bottom-right/bottom-left) onto a clean
@@ -329,13 +765,12 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         small.recycle()
         small = null
 
-        val gray = IntArray(w * h)
-        for (i in px.indices) {
-          val p = px[i]
-          gray[i] =
-              (((p shr 16) and 0xFF) * 299 + ((p shr 8) and 0xFF) * 587 + (p and 0xFF) * 114) / 1000
-        }
-        val blurred = boxBlur(boxBlur(gray, w, h, 2), w, h, 2)
+        val gray = toGray(px)
+        // Blur radius scales with the working resolution (see DETECT_SIZE) so
+        // raising that constant doesn't leave noise/paper-texture under-smoothed
+        // relative to the larger image.
+        val blurRadius = max(2, (min(w, h) * 0.005f).toInt())
+        val blurred = boxBlur(boxBlur(gray, w, h, blurRadius), w, h, blurRadius)
 
         val quad = findBestDocumentQuad(blurred, w, h)
         if (quad == null) {
@@ -437,7 +872,7 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
     val base = otsuThreshold(gray)
     val closeRadius = max(3, (kotlin.math.min(w, h) * 0.02f).toInt())
     var best: DocCandidate? = null
-    for (delta in intArrayOf(-30, -15, 0, 12)) {
+    for (delta in intArrayOf(-45, -30, -15, 0, 12, 24)) {
       for (bright in booleanArrayOf(true, false)) {
         val c = documentCandidate(gray, w, h, base + delta, bright, closeRadius) ?: continue
         val b = best
@@ -724,16 +1159,22 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
       val yi = Math.round(y)
       return if (xi < 0 || yi < 0 || xi >= w || yi >= h) -1 else gray[yi * w + xi]
     }
+    // Tuned at the old 400px working resolution (DETECT_SIZE) - scaled so a
+    // higher DETECT_SIZE keeps sampling the same real-world distance from
+    // the candidate edge instead of hugging it too closely.
+    val offsetScale = min(w, h) / 400f
+    val nearOffset = 4f * offsetScale
+    val farOffset = 7f * offsetScale
     val values = ArrayList<Float>()
     val samples = 24
     for (k in 1..samples) {
       val t = k / (samples + 1f)
       val x = x0 + dx * t
       val y = y0 + dy * t
-      val in1 = at(x - nx * 4f, y - ny * 4f)
-      val in2 = at(x - nx * 7f, y - ny * 7f)
-      val out1 = at(x + nx * 4f, y + ny * 4f)
-      val out2 = at(x + nx * 7f, y + ny * 7f)
+      val in1 = at(x - nx * nearOffset, y - ny * nearOffset)
+      val in2 = at(x - nx * farOffset, y - ny * farOffset)
+      val out1 = at(x + nx * nearOffset, y + ny * nearOffset)
+      val out2 = at(x + nx * farOffset, y + ny * farOffset)
       if (in1 < 0 || in2 < 0 || out1 < 0 || out2 < 0) continue
       values.add(polarity * ((in1 + in2) / 2f - (out1 + out2) / 2f))
     }

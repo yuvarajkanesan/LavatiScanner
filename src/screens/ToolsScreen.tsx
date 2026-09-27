@@ -96,7 +96,7 @@ export default function ToolsScreen({navigation}: Props) {
       key: 'folders',
       icon: 'folder',
       label: 'Folders',
-      onPress: () => navigation.navigate('Folders'),
+      onPress: () => navigation.navigate('AllFiles'),
     },
     {
       key: 'import',

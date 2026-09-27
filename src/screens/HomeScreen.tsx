@@ -46,7 +46,6 @@ import DocumentListRow from '../components/DocumentListRow';
 import FolderPickerModal from '../components/FolderPickerModal';
 import OptionSheet, {SheetOption} from '../components/OptionSheet';
 import ToolGrid, {ToolShortcut} from '../components/ToolGrid';
-import Fab from '../components/Fab';
 import Icon from '../components/Icon';
 import ScreenBackground from '../components/ScreenBackground';
 import {AppColors} from '../theme/colors';
@@ -778,38 +777,32 @@ export default function HomeScreen({navigation}: Props) {
           </View>
 
           <View style={styles.sectionRow}>
-            <Text style={styles.sectionTitle}>My Scans</Text>
+            <Text style={styles.sectionTitle}>
+              My Scans{documents.length > 0 ? ` (${documents.length})` : ''}
+            </Text>
             <TouchableOpacity
               onPress={handleCreateFolder}
-              hitSlop={8}
+              hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon
-                name="create-new-folder"
-                size={22}
-                color={colors.text}
-              />
+              <Icon name="create-new-folder" size={20} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setViewSheetVisible(true)}
-              hitSlop={8}
+              hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon name={currentViewOption.icon} size={22} color={colors.text} />
+              <Icon name={currentViewOption.icon} size={20} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setSortSheetVisible(true)}
-              hitSlop={8}
+              hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon name="sort" size={22} color={colors.text} />
+              <Icon name="sort" size={20} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setSelectionMode(true)}
-              hitSlop={8}
+              hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon
-                name="check-circle-outline"
-                size={22}
-                color={colors.text}
-              />
+              <Icon name="check-circle-outline" size={20} color={colors.text} />
             </TouchableOpacity>
           </View>
         </>
@@ -981,25 +974,6 @@ export default function HomeScreen({navigation}: Props) {
           )}
         />
       )}
-
-      {!selectionMode && (
-        <>
-          <Fab
-            onPress={handleImportImagesTray}
-            icon="image"
-            variant="primary"
-            size={54}
-            bottom={92}
-          />
-          <Fab
-            onPress={handleNewScan}
-            icon="photo-camera"
-            variant="primary"
-            size={58}
-            bottom={24}
-          />
-        </>
-      )}
       </View>
 
       {selectionMode ? (
@@ -1040,6 +1014,7 @@ export default function HomeScreen({navigation}: Props) {
             shortcuts={homeShortcuts}
             columns={4}
             busyKey={importingTray}
+            compact
           />
         </View>
       )}
@@ -1175,25 +1150,37 @@ const createStyles = (colors: AppColors) =>
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
+      elevation: 1,
+      shadowColor: colors.black,
+      shadowOffset: {width: 0, height: 1},
+      shadowOpacity: 0.06,
+      shadowRadius: 3,
     },
     sectionRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 16,
+      gap: 10,
       marginHorizontal: 16,
-      marginTop: 18,
-      marginBottom: 4,
+      marginTop: 20,
+      marginBottom: 6,
     },
     sectionTitle: {
       flex: 1,
-      fontSize: 15,
+      fontSize: 14,
       fontWeight: '800',
-      letterSpacing: 0.3,
-      color: colors.text,
+      letterSpacing: 0.4,
+      color: colors.textMuted,
       textTransform: 'uppercase',
     },
     sectionIconBtn: {
-      padding: 2,
+      width: 34,
+      height: 34,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     listArea: {
       flex: 1,
@@ -1205,8 +1192,8 @@ const createStyles = (colors: AppColors) =>
       borderTopWidth: 1,
       borderColor: colors.border,
       paddingHorizontal: 16,
-      paddingTop: 16,
-      paddingBottom: 14,
+      paddingTop: 12,
+      paddingBottom: 10,
       elevation: 8,
       shadowColor: colors.black,
       shadowOffset: {width: 0, height: -2},
@@ -1235,6 +1222,7 @@ const createStyles = (colors: AppColors) =>
     },
     list: {
       padding: 16,
+      paddingBottom: 24,
     },
     row: {
       justifyContent: 'space-between',
@@ -1265,6 +1253,9 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: 32,
+      // Extra right clearance so centered text doesn't run under the
+      // stacked gallery/camera FABs docked at the bottom-right.
+      paddingRight: 110,
     },
     emptyIconWrap: {
       width: 76,

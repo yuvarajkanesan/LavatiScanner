@@ -10,8 +10,7 @@ import {
 import Alert from '../utils/customAlert';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import {useFocusEffect} from '@react-navigation/native';
-import {NativeStackScreenProps} from '@react-navigation/native-stack';
-import {RootStackParamList} from '../navigation/types';
+import {TabScreenProps} from '../navigation/types';
 import {
   createFolder,
   deleteFolder,
@@ -35,7 +34,7 @@ import Icon from '../components/Icon';
 import PinPad from '../components/PinPad';
 import {promptForText} from '../utils/promptForText';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Folders'>;
+type Props = TabScreenProps<'AllFiles'>;
 
 export default function FoldersScreen({navigation}: Props) {
   const {colors} = useTheme();
@@ -127,8 +126,7 @@ export default function FoldersScreen({navigation}: Props) {
             {text: 'Cancel', style: 'cancel'},
             {
               text: 'Go to Settings',
-              onPress: () =>
-                navigation.navigate('MainTabs', {screen: 'Settings'}),
+              onPress: () => navigation.navigate('Settings'),
             },
           ],
         );

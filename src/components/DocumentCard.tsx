@@ -110,8 +110,8 @@ export default function DocumentCard({
         {document.name}
       </AppText>
       <Text style={styles.date} numberOfLines={1}>
-        {document.pageCount} page{document.pageCount === 1 ? '' : 's'} |{' '}
-        {formatDate(document.updatedAt)} | {formatTime(document.updatedAt)} |{' '}
+        {document.pageCount} page{document.pageCount === 1 ? '' : 's'} ·{' '}
+        {formatDate(document.updatedAt)} · {formatTime(document.updatedAt)} ·{' '}
         {formatBytes(document.totalSizeBytes)}
       </Text>
     </AnimatedPressable>

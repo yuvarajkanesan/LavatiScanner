@@ -1,4 +1,14 @@
-export type FilterType = 'original' | 'bw' | 'grayscale' | 'enhanced' | 'clean';
+export type FilterType =
+  | 'original'
+  | 'auto'
+  | 'enhanced'
+  | 'grayscale'
+  | 'bw'
+  | 'lighten'
+  | 'shadowRemoval'
+  | 'eco'
+  | 'sharpen'
+  | 'invert';
 
 /** A single OCR'd line of text and its position, as 0..1 ratios of the page
  * image's own width/height (top-left origin) — JSON-serialized into

@@ -14,14 +14,14 @@ const FUN_PALETTE = [
 ] as const;
 
 export const lightColors = {
-  background: '#FFFDFB',
-  surface: '#F5F3FF',
-  border: '#E6E1F7',
-  text: '#241E38',
-  textMuted: '#71678C',
-  accent: '#6C4CF1',
-  accentDark: '#5334D6',
-  accentMuted: '#EFEAFF',
+  background: '#F7FAFF',
+  surface: '#EDF2FC',
+  border: '#DBE5F5',
+  text: '#1A2333',
+  textMuted: '#5C6B85',
+  accent: '#2F6FED',
+  accentDark: '#1E54C4',
+  accentMuted: '#E3ECFC',
   gold: '#E0A32E',
   danger: '#E4483F',
   success: '#2EC4B6',
@@ -29,38 +29,38 @@ export const lightColors = {
   white: '#FFFFFF',
   black: '#000000',
   /** Bold gradient accents for premium CTAs (buttons, FAB, active tab, hero badges). */
-  gradientPrimary: ['#8B5CF6', '#5B5FEF'] as [string, string],
+  gradientPrimary: ['#4C86FF', '#2F6FED'] as [string, string],
   gradientGold: ['#F3C065', '#E0A32E'] as [string, string],
   /** Warm, high-energy gradient for playful highlight moments (empty
    * states, celebratory badges, "new"/streak callouts). */
   gradientSunset: ['#FF6B6B', '#FFA34D'] as [string, string],
   /** Subtle full-screen wash — accent bleeding faintly from the top-left corner into the base background. */
-  gradientBackground: ['#F3EFFF', '#FFFDFB'] as [string, string],
+  gradientBackground: ['#E9F0FF', '#F7FAFF'] as [string, string],
   /** Stronger banner gradient for header/hero bands. */
-  gradientHero: ['#EFE9FF', '#FBF7FF'] as [string, string],
+  gradientHero: ['#E4EDFC', '#FAFCFF'] as [string, string],
   funPalette: FUN_PALETTE as unknown as string[],
 };
 
 export const darkColors: AppColors = {
-  background: '#161027',
-  surface: '#211A38',
-  border: '#332A52',
-  text: '#F2EEFF',
-  textMuted: '#A79BC7',
-  accent: '#9B87F7',
-  accentDark: '#B7A6FF',
-  accentMuted: '#2C2350',
+  background: '#1C2333',
+  surface: '#28324A',
+  border: '#3E4B6B',
+  text: '#F2F5FC',
+  textMuted: '#AEB9D1',
+  accent: '#6E9BFF',
+  accentDark: '#8FB2FF',
+  accentMuted: '#2E3A57',
   gold: '#E7B65A',
   danger: '#F16B62',
   success: '#3DDBC9',
-  overlay: 'rgba(0,0,0,0.65)',
+  overlay: 'rgba(0,0,0,0.55)',
   white: '#FFFFFF',
   black: '#000000',
-  gradientPrimary: ['#9B6BFF', '#6C4CF1'],
+  gradientPrimary: ['#6E9BFF', '#3E74E8'],
   gradientGold: ['#FFD98A', '#E7B65A'],
   gradientSunset: ['#FF8080', '#FFB870'],
-  gradientBackground: ['#1D1533', '#161027'],
-  gradientHero: ['#2A2050', '#1E1738'],
+  gradientBackground: ['#28324A', '#1C2333'],
+  gradientHero: ['#31405F', '#242E45'],
   funPalette: FUN_PALETTE as unknown as string[],
 };
 

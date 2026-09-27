@@ -11,7 +11,6 @@ import CaptureScreen from '../screens/CaptureScreen';
 import TrimPageScreen from '../screens/TrimPageScreen';
 import FilterScreen from '../screens/FilterScreen';
 import DocumentDetailScreen from '../screens/DocumentDetailScreen';
-import FoldersScreen from '../screens/FoldersScreen';
 import FolderDetailScreen from '../screens/FolderDetailScreen';
 import IdCardScanScreen from '../screens/IdCardScanScreen';
 import BookScanScreen from '../screens/BookScanScreen';
@@ -81,11 +80,6 @@ export default function RootNavigator() {
           name="DocumentDetail"
           component={DocumentDetailScreen}
           options={{title: ''}}
-        />
-        <Stack.Screen
-          name="Folders"
-          component={FoldersScreen}
-          options={{title: 'Folders'}}
         />
         <Stack.Screen
           name="FolderDetail"

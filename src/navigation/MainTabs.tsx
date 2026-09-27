@@ -10,6 +10,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { MainTabParamList } from './types';
 import HomeScreen from '../screens/HomeScreen';
+import AllFilesScreen from '../screens/FoldersScreen';
 import ToolsScreen from '../screens/ToolsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import Icon from '../components/Icon';
@@ -53,11 +54,13 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 const ICONS_OUTLINE: Record<keyof MainTabParamList, string> = {
   Home: 'home-outline',
+  AllFiles: 'file-multiple-outline',
   Tools: 'toolbox-outline',
   Settings: 'cog-outline',
 };
 const ICONS_FILLED: Record<keyof MainTabParamList, string> = {
   Home: 'home',
+  AllFiles: 'file-multiple',
   Tools: 'toolbox',
   Settings: 'cog',
 };
@@ -65,6 +68,7 @@ const ICONS_FILLED: Record<keyof MainTabParamList, string> = {
  * accent, so the bar itself reads as playful/colorful. */
 const TAB_COLOR_INDEX: Record<keyof MainTabParamList, number> = {
   Home: 0,
+  AllFiles: 3,
   Tools: 5,
   Settings: 4,
 };
@@ -168,18 +172,36 @@ export default function MainTabs() {
         options={{
           title: 'Lavati Scanner',
           headerTitle: () => <HomeHeaderTitle />,
+          tabBarLabel: 'Home',
           tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Home],
         }}
       />
       <Tab.Screen
+        name="AllFiles"
+        component={AllFilesScreen}
+        options={{
+          title: 'All Files',
+          tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.AllFiles],
+        }}
+      />
+      {/* Tools and Settings stay reachable (Home's tool tray and settings
+          icon navigate to them directly) but are hidden from the bar itself
+          — only Home and All Files show as bottom tabs. */}
+      <Tab.Screen
         name="Tools"
         component={ToolsScreen}
-        options={{ tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Tools] }}
+        options={{
+          tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Tools],
+          tabBarButton: () => null,
+        }}
       />
       <Tab.Screen
         name="Settings"
         component={SettingsScreen}
-        options={{ tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Settings] }}
+        options={{
+          tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Settings],
+          tabBarButton: () => null,
+        }}
       />
     </Tab.Navigator>
   );

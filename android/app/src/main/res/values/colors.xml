@@ -1,7 +1,7 @@
 <resources>
     <!-- Mirrors src/theme/colors.ts lightColors so the native window/status bar
      doesn't flash a default AppCompat look before the JS theme mounts. -->
-    <color name="colorPrimary">#6C4CF1</color>
-    <color name="colorPrimaryDark">#5334D6</color>
-    <color name="windowBackground">#FFFDFB</color>
+    <color name="colorPrimary">#2F6FED</color>
+    <color name="colorPrimaryDark">#1E54C4</color>
+    <color name="windowBackground">#F7FAFF</color>
 </resources>

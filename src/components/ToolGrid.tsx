@@ -21,18 +21,22 @@ export interface ToolShortcut {
 /** Flex-wrap grid of tool shortcut cards, shared by the Tools screen (full
  * catalog) and the Home screen (a shorter, most-used subset). `columns`
  * overrides the responsive default - the Home tray wants a fixed count to
- * match its compact layout regardless of screen width. */
+ * match its compact layout regardless of screen width. `compact` shrinks
+ * card padding/icon size - the Home tray sits above the tab bar and needs
+ * to read as a quick strip, not a full destination screen like Tools. */
 export default function ToolGrid({
   shortcuts,
   busyKey,
   columns,
+  compact,
 }: {
   shortcuts: ToolShortcut[];
   busyKey?: string | null;
   columns?: number;
+  compact?: boolean;
 }) {
   const {colors} = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
+  const styles = useMemo(() => createStyles(colors, compact), [colors, compact]);
   const {toolColumns} = useResponsive();
   const cardWidthPercent = percentWidth(100 / (columns ?? toolColumns) - 3);
   return (
@@ -44,6 +48,7 @@ export default function ToolGrid({
           busy={busyKey === s.key}
           styles={styles}
           widthPercent={cardWidthPercent}
+          iconSize={compact ? 34 : 44}
         />
       ))}
     </View>
@@ -57,11 +62,13 @@ function ToolCard({
   busy,
   styles,
   widthPercent,
+  iconSize,
 }: {
   shortcut: ToolShortcut;
   busy: boolean;
   styles: ReturnType<typeof createStyles>;
   widthPercent: PercentWidth;
+  iconSize: number;
 }) {
   const {colors} = useTheme();
   const scale = useSharedValue(1);
@@ -79,7 +86,7 @@ function ToolCard({
         scale.value = withSpring(1, {damping: 15, stiffness: 400});
       }}>
       {busy ? (
-        <View style={styles.cardIconWrap}>
+        <View style={[styles.cardIconWrap, {width: iconSize, height: iconSize, borderRadius: iconSize / 2}]}>
           <ActivityIndicator color={colors.accent} />
         </View>
       ) : (
@@ -87,7 +94,7 @@ function ToolCard({
           icon={token?.icon ?? shortcut.icon}
           family={token?.family}
           color={token?.color ?? colors.accent}
-          size={44}
+          size={iconSize}
           variant="soft"
         />
       )}
@@ -96,18 +103,19 @@ function ToolCard({
   );
 }
 
-const createStyles = (colors: AppColors) =>
+const createStyles = (colors: AppColors, compact?: boolean) =>
   StyleSheet.create({
     grid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      gap: 12,
+      justifyContent: 'space-between',
+      rowGap: compact ? 8 : 12,
     },
     card: {
       width: '30%',
       alignItems: 'center',
-      paddingVertical: 16,
-      borderRadius: 16,
+      paddingVertical: compact ? 10 : 16,
+      borderRadius: compact ? 14 : 16,
       backgroundColor: colors.surface,
       borderWidth: 1,
       borderColor: colors.border,
@@ -118,16 +126,13 @@ const createStyles = (colors: AppColors) =>
       shadowRadius: 5,
     },
     cardIconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
       backgroundColor: colors.accentMuted,
       alignItems: 'center',
       justifyContent: 'center',
     },
     cardLabel: {
-      marginTop: 8,
-      fontSize: 12,
+      marginTop: compact ? 5 : 8,
+      fontSize: compact ? 11 : 12,
       fontWeight: '600',
       color: colors.text,
       textAlign: 'center',
