@@ -23,6 +23,10 @@ interface Props {
   /** Pre-resolved small cached thumbnail - falls back to the document's
    * full-resolution page file until it's ready. */
   thumbnailUri?: string;
+  /** When provided, renders inline share/more icons instead of the sync
+   * badge/chevron - used by the Home screen's compact scan list. */
+  onShare?: () => void;
+  onMore?: () => void;
 }
 
 export default function DocumentListRow({
@@ -34,6 +38,8 @@ export default function DocumentListRow({
   index = 0,
   showSyncStatus,
   thumbnailUri,
+  onShare,
+  onMore,
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -70,15 +76,42 @@ export default function DocumentListRow({
           {formatBytes(document.totalSizeBytes)}
         </Text>
       </View>
-      {showSyncStatus && !selectionMode && (
-        <Icon
-          name={synced ? 'cloud-done' : 'cloud-queue'}
-          size={18}
-          color={synced ? colors.success : colors.textMuted}
-          style={styles.syncIcon}
-        />
+      {onShare || onMore ? (
+        !selectionMode && (
+          <View style={styles.rowActions}>
+            {onShare && (
+              <TouchableOpacity
+                onPress={onShare}
+                hitSlop={8}
+                style={styles.rowActionBtn}>
+                <Icon name="share" size={19} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+            {onMore && (
+              <TouchableOpacity
+                onPress={onMore}
+                hitSlop={8}
+                style={styles.rowActionBtn}>
+                <Icon name="more-vert" size={19} color={colors.textMuted} />
+              </TouchableOpacity>
+            )}
+          </View>
+        )
+      ) : (
+        <>
+          {showSyncStatus && !selectionMode && (
+            <Icon
+              name={synced ? 'cloud-done' : 'cloud-queue'}
+              size={18}
+              color={synced ? colors.success : colors.textMuted}
+              style={styles.syncIcon}
+            />
+          )}
+          {!selectionMode && (
+            <Icon name="chevron-right" size={22} color={colors.textMuted} />
+          )}
+        </>
       )}
-      {!selectionMode && <Icon name="chevron-right" size={22} color={colors.textMuted} />}
     </TouchableOpacity>
   );
 }
@@ -156,5 +189,13 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
   },
   syncIcon: {
     marginRight: 6,
+  },
+  rowActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+  },
+  rowActionBtn: {
+    padding: 2,
   },
 });

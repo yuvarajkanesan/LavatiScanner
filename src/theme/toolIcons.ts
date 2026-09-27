@@ -24,7 +24,10 @@ export const toolIcons: Record<
   | 'unlock'
   | 'collage'
   | 'watermark'
-  | 'compression',
+  | 'compression'
+  | 'images'
+  | 'share'
+  | 'more',
   ToolIconToken
 > = {
   // These icon names are MaterialIcons glyphs (matching the screen's
@@ -44,4 +47,7 @@ export const toolIcons: Record<
   collage: {icon: 'grid-view', family: 'material', color: '#F97316'},
   watermark: {icon: 'branding-watermark', family: 'material', color: '#0EA5E9'},
   compression: {icon: 'compress', family: 'material', color: '#14B8A6'},
+  images: {icon: 'image', family: 'material', color: '#22C55E'},
+  share: {icon: 'picture-as-pdf', family: 'material', color: '#EF4444'},
+  more: {icon: 'apps', family: 'material', color: '#64748B'},
 };

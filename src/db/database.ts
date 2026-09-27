@@ -399,15 +399,19 @@ export async function reorderPages(
   await touchDocument(docId);
 }
 
+/** Also clears any cached OCR text/blocks for the page: they were computed
+ * against the previous image and would otherwise misalign with (or, after
+ * a markup/redaction edit, leak recognized text through) the new one — see
+ * `drawInvisibleTextLayer` in services/pdfExport.ts and `searchDocumentsByText`. */
 export async function setPageFilePath(
   id: string,
   filePath: string,
 ): Promise<void> {
   const db = await getDatabase();
-  await db.executeSql('UPDATE pages SET filePath = ? WHERE id = ?;', [
-    filePath,
-    id,
-  ]);
+  await db.executeSql(
+    'UPDATE pages SET filePath = ?, ocrText = NULL, ocrBlocks = NULL WHERE id = ?;',
+    [filePath, id],
+  );
   const docId = await getPageDocId(id);
   if (docId) {
     scheduleDocumentSync(docId);

@@ -27,7 +27,6 @@ import {
   setUpdateIntervalForType,
   SensorTypes,
 } from 'react-native-sensors';
-import Alert from '../utils/customAlert';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {CaptureMode, RootStackParamList} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';

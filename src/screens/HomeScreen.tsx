@@ -2,7 +2,6 @@ import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Pressable,
   RefreshControl,
   SectionList,
   StyleSheet,
@@ -11,12 +10,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
 import Alert from '../utils/customAlert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Share from 'react-native-share';
@@ -33,6 +26,7 @@ import {
   listFolders,
   listPages,
   moveDocumentToFolder,
+  renameDocument,
   searchDocumentsByText,
 } from '../db/database';
 import {copyPageFile, deleteDocumentFiles} from '../services/fileStorage';
@@ -40,6 +34,10 @@ import {
   buildPdfFromImages,
   parsePageOcrBlocks,
 } from '../services/pdfExport';
+import {
+  importFilesAsDocuments,
+  importGalleryImagesAsDocuments,
+} from '../services/importFiles';
 import {isGoogleDriveSignedIn} from '../services/googleDrive';
 import {getThumbnail} from '../services/nativeImageFilter';
 import {mapWithConcurrency} from '../utils/concurrency';
@@ -47,6 +45,7 @@ import DocumentCard from '../components/DocumentCard';
 import DocumentListRow from '../components/DocumentListRow';
 import FolderPickerModal from '../components/FolderPickerModal';
 import OptionSheet, {SheetOption} from '../components/OptionSheet';
+import ToolGrid, {ToolShortcut} from '../components/ToolGrid';
 import Fab from '../components/Fab';
 import Icon from '../components/Icon';
 import ScreenBackground from '../components/ScreenBackground';
@@ -55,8 +54,6 @@ import {useTheme} from '../theme/ThemeContext';
 import {scanTimestampName} from '../utils/format';
 import {promptForText} from '../utils/promptForText';
 import {percentWidth, useResponsive} from '../utils/responsive';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 type Props = TabScreenProps<'Home'>;
 
@@ -141,7 +138,7 @@ export default function HomeScreen({navigation}: Props) {
   const [contentMatchIds, setContentMatchIds] = useState<Set<string>>(
     new Set(),
   );
-  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [sortMode, setSortMode] = useState<SortMode>('modified_desc');
   const [viewSheetVisible, setViewSheetVisible] = useState(false);
   const [sortSheetVisible, setSortSheetVisible] = useState(false);
@@ -158,6 +155,12 @@ export default function HomeScreen({navigation}: Props) {
   const [deletableFolderId, setDeletableFolderId] = useState<string | null>(
     null,
   );
+  const [moreMenuDoc, setMoreMenuDoc] = useState<DocumentSummary | null>(
+    null,
+  );
+  const [importingTray, setImportingTray] = useState<
+    'import' | 'images' | null
+  >(null);
 
   useEffect(() => {
     AsyncStorage.getItem(VIEW_MODE_KEY).then(saved => {
@@ -298,18 +301,6 @@ export default function HomeScreen({navigation}: Props) {
     [documents, selectedIds],
   );
 
-  const load = useCallback(async () => {
-    const [docs, folderList] = await Promise.all([
-      listDocuments('all'),
-      listFolders(),
-    ]);
-    setDocuments(docs);
-    setFolders(folderList);
-    setDriveConnected(isGoogleDriveSignedIn());
-    setLoading(false);
-    resolveThumbnails(docs);
-  }, []);
-
   /** Resolves each document's small cached thumbnail in the background
    * (never blocks the screen from showing) - see `getThumbnail`'s doc
    * comment for why this exists: without it every card/row decodes a
@@ -334,6 +325,18 @@ export default function HomeScreen({navigation}: Props) {
     });
   }, []);
 
+  const load = useCallback(async () => {
+    const [docs, folderList] = await Promise.all([
+      listDocuments('all'),
+      listFolders(),
+    ]);
+    setDocuments(docs);
+    setFolders(folderList);
+    setDriveConnected(isGoogleDriveSignedIn());
+    setLoading(false);
+    resolveThumbnails(docs);
+  }, [resolveThumbnails]);
+
   useFocusEffect(
     useCallback(() => {
       load();
@@ -348,6 +351,132 @@ export default function HomeScreen({navigation}: Props) {
 
   function handleNewScan() {
     navigation.navigate('Scan', {folderId: null});
+  }
+
+  async function handleImportFilesTray() {
+    try {
+      setImportingTray('import');
+      const {createdDocIds, skipped} = await importFilesAsDocuments(null);
+      if (createdDocIds.length === 0) {
+        if (skipped.length > 0) {
+          Alert.alert(
+            'Import failed',
+            `Could not open: ${skipped.join(
+              ', ',
+            )}. The file may be password-protected.`,
+          );
+        }
+        return;
+      }
+      if (skipped.length > 0) {
+        Alert.alert(
+          'Some files skipped',
+          `Could not open: ${skipped.join(
+            ', ',
+          )}. The rest were imported as separate documents.`,
+        );
+      }
+      await load();
+      if (createdDocIds.length === 1) {
+        navigation.navigate('DocumentDetail', {docId: createdDocIds[0]});
+      }
+    } catch (error) {
+      Alert.alert('Import failed', 'Could not import the selected files.');
+    } finally {
+      setImportingTray(null);
+    }
+  }
+
+  async function handleImportImagesTray() {
+    try {
+      setImportingTray('images');
+      const {createdDocIds} = await importGalleryImagesAsDocuments(null);
+      if (createdDocIds.length === 0) {
+        return;
+      }
+      await load();
+      if (createdDocIds.length === 1) {
+        navigation.navigate('DocumentDetail', {docId: createdDocIds[0]});
+      }
+    } catch (error) {
+      Alert.alert('Import failed', 'Could not import the selected images.');
+    } finally {
+      setImportingTray(null);
+    }
+  }
+
+  /** No dedicated share-picker screen exists - dropping the user into
+   * selection mode reuses the already-wired bulk Share action instead of
+   * duplicating its PDF-build-and-share logic here. */
+  function handleShareAsPdfTray() {
+    setSelectionMode(true);
+  }
+
+  async function handleShareSingleDocument(doc: DocumentSummary) {
+    try {
+      const pages = await listPages(doc.id);
+      if (pages.length === 0) {
+        return;
+      }
+      const pdfPath = await buildPdfFromImages(
+        pages.map(p => p.filePath),
+        doc.name,
+        pages.map(p => parsePageOcrBlocks(p.ocrBlocks)),
+      );
+      await Share.open({
+        url: `file://${pdfPath}`,
+        type: 'application/pdf',
+        failOnCancel: false,
+      });
+    } catch (error) {
+      Alert.alert(
+        'Share failed',
+        'Could not prepare this document for sharing.',
+      );
+    }
+  }
+
+  async function handleRenameFromMenu() {
+    const doc = moreMenuDoc;
+    setMoreMenuDoc(null);
+    if (!doc) {
+      return;
+    }
+    const name = await promptForText('Rename document', doc.name);
+    if (name && name.trim() && name.trim() !== doc.name) {
+      await renameDocument(doc.id, name.trim());
+      load();
+    }
+  }
+
+  function handleMoveFromMenu() {
+    const doc = moreMenuDoc;
+    setMoreMenuDoc(null);
+    if (!doc) {
+      return;
+    }
+    setSelectedIds([doc.id]);
+    handleMoveOrCopy();
+  }
+
+  function handleDeleteFromMenu() {
+    const doc = moreMenuDoc;
+    setMoreMenuDoc(null);
+    if (!doc) {
+      return;
+    }
+    Alert.alert('Delete document', `Delete "${doc.name}"? This can't be undone.`, [
+      {text: 'Cancel', style: 'cancel'},
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: async () => {
+          await deleteDocument(doc.id);
+          await deleteDocumentFiles(doc.id);
+          load();
+        },
+      },
+    ]);
   }
 
   async function handleCreateFolder() {
@@ -556,6 +685,59 @@ export default function HomeScreen({navigation}: Props) {
 
   const currentViewOption = VIEW_OPTIONS.find(o => o.key === viewMode)!;
 
+  const moreMenuOptions: SheetOption[] = [
+    {key: 'rename', label: 'Rename', icon: 'edit'},
+    {key: 'move', label: 'Move / Copy', icon: 'drive-file-move'},
+    {key: 'delete', label: 'Delete', icon: 'delete-outline', color: colors.danger},
+  ];
+
+  const homeShortcuts: ToolShortcut[] = [
+    {key: 'docs', icon: 'description', label: 'Smart Scan', onPress: handleNewScan},
+    {
+      key: 'idcard',
+      icon: 'badge',
+      label: 'ID Card',
+      onPress: () =>
+        navigation.navigate('Scan', {folderId: null, mode: 'idcard'}),
+    },
+    {
+      key: 'import',
+      icon: 'file-upload',
+      label: 'Import Files',
+      onPress: handleImportFilesTray,
+    },
+    {
+      key: 'images',
+      icon: 'image',
+      label: 'Import Images',
+      onPress: handleImportImagesTray,
+    },
+    {
+      key: 'share',
+      icon: 'picture-as-pdf',
+      label: 'Share as PDF',
+      onPress: handleShareAsPdfTray,
+    },
+    {
+      key: 'editor',
+      icon: 'edit-document',
+      label: 'Edit PDF',
+      onPress: () => navigation.navigate('PdfEditor'),
+    },
+    {
+      key: 'sign',
+      icon: 'draw',
+      label: 'Sign',
+      onPress: () => navigation.navigate('SignPdf'),
+    },
+    {
+      key: 'more',
+      icon: 'apps',
+      label: 'More Tools',
+      onPress: () => navigation.navigate('Tools'),
+    },
+  ];
+
   return (
     <ScreenBackground>
       {selectionMode ? (
@@ -576,28 +758,69 @@ export default function HomeScreen({navigation}: Props) {
         </View>
       ) : (
         <>
-          <View style={styles.topRow}>
-            <Text style={styles.docCount}>All Docs ({documents.length})</Text>
-            <NewScanButton onPress={handleNewScan} />
-          </View>
-          {documents.length > 0 && (
-            <View style={styles.toolbar}>
-              <View style={styles.searchBar}>
-                <Icon name="search" size={20} color={colors.textMuted} />
-                <TextInput
-                  style={styles.searchInput}
-                  placeholder="Search your documents"
-                  placeholderTextColor={colors.textMuted}
-                  value={query}
-                  onChangeText={setQuery}
-                />
-              </View>
+          <View style={styles.searchRow}>
+            <View style={styles.searchBar}>
+              <Icon name="search" size={20} color={colors.textMuted} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Search"
+                placeholderTextColor={colors.textMuted}
+                value={query}
+                onChangeText={setQuery}
+              />
             </View>
-          )}
+            <TouchableOpacity
+              style={styles.settingsBtn}
+              onPress={() => navigation.navigate('Settings')}
+              hitSlop={8}>
+              <Icon name="settings" size={22} color={colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.sectionRow}>
+            <Text style={styles.sectionTitle}>My Scans</Text>
+            <TouchableOpacity
+              onPress={handleCreateFolder}
+              hitSlop={8}
+              style={styles.sectionIconBtn}>
+              <Icon
+                name="create-new-folder"
+                size={22}
+                color={colors.text}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setViewSheetVisible(true)}
+              hitSlop={8}
+              style={styles.sectionIconBtn}>
+              <Icon name={currentViewOption.icon} size={22} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setSortSheetVisible(true)}
+              hitSlop={8}
+              style={styles.sectionIconBtn}>
+              <Icon name="sort" size={22} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setSelectionMode(true)}
+              hitSlop={8}
+              style={styles.sectionIconBtn}>
+              <Icon
+                name="check-circle-outline"
+                size={22}
+                color={colors.text}
+              />
+            </TouchableOpacity>
+          </View>
         </>
       )}
 
-      {!loading && documents.length === 0 ? (
+      <View style={styles.listArea}>
+      {loading ? (
+        <View style={styles.empty}>
+          <ActivityIndicator color={colors.accent} size="large" />
+        </View>
+      ) : documents.length === 0 ? (
         <View style={styles.empty}>
           <View style={styles.emptyIconWrap}>
             <Icon name="document-scanner" size={36} color={colors.accent} />
@@ -669,6 +892,8 @@ export default function HomeScreen({navigation}: Props) {
               selected={selectedIds.includes(item.id)}
               showSyncStatus={driveConnected}
               thumbnailUri={thumbnails[item.id]}
+              onShare={() => handleShareSingleDocument(item)}
+              onMore={() => setMoreMenuDoc(item)}
             />
           )}
         />
@@ -757,6 +982,26 @@ export default function HomeScreen({navigation}: Props) {
         />
       )}
 
+      {!selectionMode && (
+        <>
+          <Fab
+            onPress={handleImportImagesTray}
+            icon="image"
+            variant="primary"
+            size={54}
+            bottom={92}
+          />
+          <Fab
+            onPress={handleNewScan}
+            icon="photo-camera"
+            variant="primary"
+            size={58}
+            bottom={24}
+          />
+        </>
+      )}
+      </View>
+
       {selectionMode ? (
         <View style={styles.bulkBar}>
           <BulkAction
@@ -790,29 +1035,13 @@ export default function HomeScreen({navigation}: Props) {
           />
         </View>
       ) : (
-        <>
-          <Fab
-            onPress={() => setViewSheetVisible(true)}
-            icon={currentViewOption.icon}
-            variant="secondary"
-            size={46}
-            bottom={140}
+        <View style={styles.toolTray}>
+          <ToolGrid
+            shortcuts={homeShortcuts}
+            columns={4}
+            busyKey={importingTray}
           />
-          <Fab
-            onPress={() => setSortSheetVisible(true)}
-            icon="sort"
-            variant="secondary"
-            size={46}
-            bottom={82}
-          />
-          <Fab
-            onPress={handleCreateFolder}
-            icon="create-new-folder"
-            variant="secondary"
-            size={46}
-            bottom={24}
-          />
-        </>
+        </View>
       )}
 
       <FolderPickerModal
@@ -837,34 +1066,23 @@ export default function HomeScreen({navigation}: Props) {
         onSelect={applySort}
         onClose={() => setSortSheetVisible(false)}
       />
+      <OptionSheet
+        visible={moreMenuDoc !== null}
+        title={moreMenuDoc?.name ?? ''}
+        options={moreMenuOptions}
+        selectedKey=""
+        onSelect={key => {
+          if (key === 'rename') {
+            handleRenameFromMenu();
+          } else if (key === 'move') {
+            handleMoveFromMenu();
+          } else if (key === 'delete') {
+            handleDeleteFromMenu();
+          }
+        }}
+        onClose={() => setMoreMenuDoc(null)}
+      />
     </ScreenBackground>
-  );
-}
-
-function NewScanButton({onPress}: {onPress: () => void}) {
-  const {colors} = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({transform: [{scale: scale.value}]}));
-
-  return (
-    <AnimatedPressable
-      style={[styles.inlineCameraBtn, animatedStyle]}
-      onPress={onPress}
-      onPressIn={() => {
-        scale.value = withSpring(0.92, {damping: 15, stiffness: 400});
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, {damping: 15, stiffness: 400});
-      }}>
-      <LinearGradient
-        colors={colors.gradientPrimary}
-        start={{x: 0, y: 0}}
-        end={{x: 1, y: 1}}
-        style={styles.inlineCameraGradient}>
-        <Icon name="photo-camera" size={28} color={colors.white} />
-      </LinearGradient>
-    </AnimatedPressable>
   );
 }
 
@@ -918,41 +1136,12 @@ function BulkAction({
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
-    topRow: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      marginTop: 14,
-      marginHorizontal: 16,
-    },
-    docCount: {
-      flex: 1,
-      fontSize: 13,
-      fontWeight: '700',
-      color: colors.textMuted,
-    },
-    inlineCameraBtn: {
-      width: 56,
-      height: 56,
-      borderRadius: 28,
-      elevation: 5,
-      shadowColor: colors.black,
-      shadowOffset: {width: 0, height: 3},
-      shadowOpacity: 0.28,
-      shadowRadius: 6,
-    },
-    inlineCameraGradient: {
-      width: '100%',
-      height: '100%',
-      borderRadius: 28,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    toolbar: {
+    searchRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 10,
       marginHorizontal: 16,
-      marginTop: 10,
+      marginTop: 14,
     },
     searchBar: {
       flex: 1,
@@ -976,6 +1165,53 @@ const createStyles = (colors: AppColors) =>
       fontSize: 14,
       color: colors.text,
       padding: 0,
+    },
+    settingsBtn: {
+      width: 46,
+      height: 46,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    sectionRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 16,
+      marginHorizontal: 16,
+      marginTop: 18,
+      marginBottom: 4,
+    },
+    sectionTitle: {
+      flex: 1,
+      fontSize: 15,
+      fontWeight: '800',
+      letterSpacing: 0.3,
+      color: colors.text,
+      textTransform: 'uppercase',
+    },
+    sectionIconBtn: {
+      padding: 2,
+    },
+    listArea: {
+      flex: 1,
+    },
+    toolTray: {
+      backgroundColor: colors.surface,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      borderTopWidth: 1,
+      borderColor: colors.border,
+      paddingHorizontal: 16,
+      paddingTop: 16,
+      paddingBottom: 14,
+      elevation: 8,
+      shadowColor: colors.black,
+      shadowOffset: {width: 0, height: -2},
+      shadowOpacity: 0.08,
+      shadowRadius: 6,
     },
     selectionBar: {
       flexDirection: 'row',

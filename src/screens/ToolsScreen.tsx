@@ -1,44 +1,16 @@
 import React, {useMemo, useState} from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
+import {ScrollView, StyleSheet, Text, View} from 'react-native';
 import Alert from '../utils/customAlert';
 import {TabScreenProps} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
-import {pickImportFiles} from '../services/filePicker';
-import {isPdfRenderable} from '../services/pdfEdit';
-import {renderAllPdfPages} from '../services/pdfThumbnail';
-import {saveSessionAsDocument} from '../services/scanPipeline';
-import {scanTimestampName} from '../utils/format';
-import FeatureBadge from '../components/FeatureBadge';
+import {importFilesAsDocuments} from '../services/importFiles';
 import ScreenBackground from '../components/ScreenBackground';
+import ToolGrid, {ToolShortcut} from '../components/ToolGrid';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
-import {toolIcons} from '../theme/toolIcons';
-import {PercentWidth, percentWidth, useResponsive} from '../utils/responsive';
-
-function stripExtension(name: string): string {
-  return name.replace(/\.[^./\\]+$/, '');
-}
 
 type Props = TabScreenProps<'Tools'>;
-
-interface Shortcut {
-  key: string;
-  icon: string;
-  label: string;
-  onPress: () => void | Promise<void>;
-}
+type Shortcut = ToolShortcut;
 
 export default function ToolsScreen({navigation}: Props) {
   const {colors} = useTheme();
@@ -54,49 +26,7 @@ export default function ToolsScreen({navigation}: Props) {
   async function handleImportFiles() {
     try {
       setImporting(true);
-      const {images, pdfs} = await pickImportFiles();
-      if (images.length === 0 && pdfs.length === 0) {
-        return;
-      }
-
-      const createdDocIds: string[] = [];
-      const skipped: string[] = [];
-
-      // Each picked file becomes its own document, not one merged document.
-      for (const image of images) {
-        const docId = await saveSessionAsDocument({
-          docName: stripExtension(image.name) || scanTimestampName(),
-          folderId: null,
-          pages: [{id: 'import-0', rawUri: image.uri, filter: 'original'}],
-        });
-        createdDocIds.push(docId);
-      }
-
-      for (const pdf of pdfs) {
-        // Android's native page renderer throws an uncaught exception (not a
-        // rejected promise) for any encrypted PDF, which would crash past a
-        // try/catch here — so encrypted files are filtered out before ever
-        // reaching it.
-        if (!(await isPdfRenderable(pdf.uri))) {
-          skipped.push(pdf.name);
-          continue;
-        }
-        try {
-          const rendered = await renderAllPdfPages(pdf.uri);
-          const docId = await saveSessionAsDocument({
-            docName: stripExtension(pdf.name) || scanTimestampName(),
-            folderId: null,
-            pages: rendered.map((r, i) => ({
-              id: `import-${i}`,
-              rawUri: r.uri,
-              filter: 'original',
-            })),
-          });
-          createdDocIds.push(docId);
-        } catch (pdfError) {
-          skipped.push(pdf.name);
-        }
-      }
+      const {createdDocIds, skipped} = await importFilesAsDocuments(null);
 
       if (createdDocIds.length === 0) {
         if (skipped.length > 0) {
@@ -222,10 +152,13 @@ export default function ToolsScreen({navigation}: Props) {
     <ScreenBackground>
       <ScrollView contentContainerStyle={styles.content}>
         <Section title="Scan">
-          <Grid shortcuts={scanShortcuts} />
+          <ToolGrid shortcuts={scanShortcuts} />
         </Section>
         <Section title="Process Files">
-          <Grid shortcuts={fileShortcuts} busyKey={importing ? 'import' : null} />
+          <ToolGrid
+            shortcuts={fileShortcuts}
+            busyKey={importing ? 'import' : null}
+          />
         </Section>
       </ScrollView>
     </ScreenBackground>
@@ -249,78 +182,6 @@ function Section({
   );
 }
 
-function Grid({
-  shortcuts,
-  busyKey,
-}: {
-  shortcuts: Shortcut[];
-  busyKey?: string | null;
-}) {
-  const {colors} = useTheme();
-  const styles = useMemo(() => createStyles(colors), [colors]);
-  const {toolColumns} = useResponsive();
-  const cardWidthPercent = percentWidth(100 / toolColumns - 3);
-  return (
-    <View style={styles.grid}>
-      {shortcuts.map(s => (
-        <ToolCard
-          key={s.key}
-          shortcut={s}
-          busy={busyKey === s.key}
-          styles={styles}
-          widthPercent={cardWidthPercent}
-        />
-      ))}
-    </View>
-  );
-}
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-function ToolCard({
-  shortcut,
-  busy,
-  styles,
-  widthPercent,
-}: {
-  shortcut: Shortcut;
-  busy: boolean;
-  styles: ReturnType<typeof createStyles>;
-  widthPercent: PercentWidth;
-}) {
-  const {colors} = useTheme();
-  const scale = useSharedValue(1);
-  const animatedStyle = useAnimatedStyle(() => ({transform: [{scale: scale.value}]}));
-  const token = toolIcons[shortcut.key as keyof typeof toolIcons];
-
-  return (
-    <AnimatedPressable
-      style={[styles.card, {width: widthPercent}, animatedStyle]}
-      onPress={shortcut.onPress}
-      onPressIn={() => {
-        scale.value = withSpring(0.95, {damping: 15, stiffness: 400});
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, {damping: 15, stiffness: 400});
-      }}>
-      {busy ? (
-        <View style={styles.cardIconWrap}>
-          <ActivityIndicator color={colors.accent} />
-        </View>
-      ) : (
-        <FeatureBadge
-          icon={token?.icon ?? shortcut.icon}
-          family={token?.family}
-          color={token?.color ?? colors.accent}
-          size={44}
-          variant="soft"
-        />
-      )}
-      <Text style={styles.cardLabel}>{shortcut.label}</Text>
-    </AnimatedPressable>
-  );
-}
-
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
     content: {
@@ -337,39 +198,5 @@ const createStyles = (colors: AppColors) =>
       textTransform: 'uppercase',
       marginBottom: 10,
       marginLeft: 4,
-    },
-    grid: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 12,
-    },
-    card: {
-      width: '30%',
-      alignItems: 'center',
-      paddingVertical: 16,
-      borderRadius: 16,
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      elevation: 3,
-      shadowColor: colors.black,
-      shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.1,
-      shadowRadius: 5,
-    },
-    cardIconWrap: {
-      width: 44,
-      height: 44,
-      borderRadius: 22,
-      backgroundColor: colors.accentMuted,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    cardLabel: {
-      marginTop: 8,
-      fontSize: 12,
-      fontWeight: '600',
-      color: colors.text,
-      textAlign: 'center',
     },
   });

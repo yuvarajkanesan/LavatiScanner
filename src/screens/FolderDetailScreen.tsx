@@ -63,18 +63,6 @@ export default function FolderDetailScreen({navigation, route}: Props) {
     AsyncStorage.setItem(VIEW_MODE_KEY, next);
   }
 
-  const load = useCallback(async () => {
-    const [folders, docs] = await Promise.all([
-      listFolders(),
-      listDocuments(folderId),
-    ]);
-    setFolder(folders.find(f => f.id === folderId) ?? null);
-    setDocuments(docs);
-    setDriveConnected(isGoogleDriveSignedIn());
-    setLoading(false);
-    resolveThumbnails(docs);
-  }, [folderId]);
-
   const resolveThumbnails = useCallback(async (docs: DocumentSummary[]) => {
     const targets = docs.filter(d => d.thumbnailPath);
     const resolved = await mapWithConcurrency(targets, 4, async doc => {
@@ -92,6 +80,18 @@ export default function FolderDetailScreen({navigation, route}: Props) {
       return next;
     });
   }, []);
+
+  const load = useCallback(async () => {
+    const [folders, docs] = await Promise.all([
+      listFolders(),
+      listDocuments(folderId),
+    ]);
+    setFolder(folders.find(f => f.id === folderId) ?? null);
+    setDocuments(docs);
+    setDriveConnected(isGoogleDriveSignedIn());
+    setLoading(false);
+    resolveThumbnails(docs);
+  }, [folderId, resolveThumbnails]);
 
   useFocusEffect(
     useCallback(() => {

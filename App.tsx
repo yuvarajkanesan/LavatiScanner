@@ -51,7 +51,7 @@ export default function App(): React.JSX.Element {
 }
 
 function ThemedApp() {
-  const {colors: themeColors, resolvedScheme} = useTheme();
+  const {resolvedScheme} = useTheme();
   return (
     <>
       <StatusBar

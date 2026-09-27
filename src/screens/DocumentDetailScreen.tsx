@@ -288,14 +288,6 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     {},
   );
 
-  const load = useCallback(async () => {
-    const [d, p] = await Promise.all([getDocument(docId), listPages(docId)]);
-    setDoc(d);
-    setPages(p);
-    setLoading(false);
-    resolvePageThumbnails(p);
-  }, [docId]);
-
   /** Same fix as the Home/Folder document lists (see `getThumbnail`): the
    * page grid was rendering each page's full-resolution file just to show
    * it a few hundred pixels wide in a grid cell. */
@@ -315,6 +307,14 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
       return next;
     });
   }, []);
+
+  const load = useCallback(async () => {
+    const [d, p] = await Promise.all([getDocument(docId), listPages(docId)]);
+    setDoc(d);
+    setPages(p);
+    setLoading(false);
+    resolvePageThumbnails(p);
+  }, [docId, resolvePageThumbnails]);
 
   useFocusEffect(
     useCallback(() => {
