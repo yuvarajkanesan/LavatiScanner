@@ -17,6 +17,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import {
   Camera,
+  CameraRef,
+  usePhotoOutput,
   useCameraDevice,
   useCameraPermission,
 } from 'react-native-vision-camera';
@@ -144,7 +146,7 @@ export default function CaptureScreen({navigation, route}: Props) {
     y: number;
   } | null>(null);
 
-  const cameraRef = useRef<Camera>(null);
+  const cameraRef = useRef<CameraRef>(null);
   const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flashOpacity = useSharedValue(0);
   const flashOverlayStyle = useAnimatedStyle(() => ({
@@ -154,9 +156,17 @@ export default function CaptureScreen({navigation, route}: Props) {
   const backDevice = useCameraDevice('back');
   const frontDevice = useCameraDevice('front');
   const {hasPermission, requestPermission} = useCameraPermission();
+  // vision-camera v5 moved photo capture out of the Camera view itself and
+  // into a separate output object - `outputs={[photoOutput]}` connects it,
+  // and `photoOutput.capturePhotoToFile(...)` (not a ref method anymore)
+  // takes the picture. `qualityPrioritization` replaces the old
+  // `photoQualityBalance` Camera prop.
+  const photoOutput = usePhotoOutput({
+    qualityPrioritization: hd ? 'quality' : 'speed',
+  });
 
-  const minExposure = device?.minExposure ?? -2;
-  const maxExposure = device?.maxExposure ?? 2;
+  const minExposure = device?.minExposureBias ?? -2;
+  const maxExposure = device?.maxExposureBias ?? 2;
 
   useEffect(() => {
     return () => {
@@ -228,7 +238,7 @@ export default function CaptureScreen({navigation, route}: Props) {
     }
     focusTimeoutRef.current = setTimeout(() => setFocusPoint(null), 700);
     try {
-      await cameraRef.current.focus({x: locationX, y: locationY});
+      await cameraRef.current.focusTo({x: locationX, y: locationY});
     } catch (error) {
       // Some devices/lenses don't support tap-to-focus — ignore.
     }
@@ -716,12 +726,12 @@ const styles = StyleSheet.create({
     backgroundColor: colors.black,
   },
   deviceLoading: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },
   flashOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: colors.white,
   },
   gridLineV: {
@@ -739,7 +749,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.5)',
   },
   frameGuideWrap: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 32,
@@ -756,7 +766,7 @@ const styles = StyleSheet.create({
    * it's obvious what's being watched - turns solid accent right as the
    * steady-hold timer is satisfied and the shutter is about to fire. */
   autoCaptureBorder: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     margin: 10,
     borderRadius: 20,
     borderWidth: 3,

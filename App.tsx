@@ -57,10 +57,10 @@ function ThemedApp() {
   const {resolvedScheme} = useTheme();
   return (
     <>
+      {/* backgroundColor/translucent were removed - Android now forces
+          edge-to-edge (transparent, translucent status bar) unconditionally. */}
       <StatusBar
         barStyle={resolvedScheme === 'dark' ? 'light-content' : 'dark-content'}
-        backgroundColor="transparent"
-        translucent
       />
       <RootNavigator />
     </>

@@ -74,7 +74,7 @@ export default function SignPdfScreen() {
     setSigWidth(clamped);
   }
 
-  function touchDistance(touches: {pageX: number; pageY: number}[]) {
+  function touchDistance(touches: readonly {pageX: number; pageY: number}[]) {
     const [a, b] = touches;
     return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
   }

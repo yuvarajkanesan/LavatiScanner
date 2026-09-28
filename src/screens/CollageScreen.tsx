@@ -36,7 +36,7 @@ export default function CollageScreen({route}: Props) {
   const [docPages, setDocPages] = useState<Page[]>([]);
   const [selectedPageIds, setSelectedPageIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
-  const collageRef = useRef<View>(null);
+  const collageRef = useRef<React.ComponentRef<typeof View>>(null);
 
   const load = useCallback(async () => {
     const docs = await listDocuments('all');

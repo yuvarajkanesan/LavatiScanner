@@ -39,7 +39,7 @@ export default function IdCardScanScreen({navigation, route}: Props) {
   const backUri = route.params?.backCapturedUri ?? null;
   const step: Step = frontUri && backUri ? 'review' : 'select';
   const [saving, setSaving] = useState(false);
-  const compositeRef = useRef<View>(null);
+  const compositeRef = useRef<React.ComponentRef<typeof View>>(null);
 
   const activeMode = SUB_MODES.find(m => m.key === subMode)!;
 

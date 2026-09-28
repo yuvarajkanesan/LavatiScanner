@@ -85,7 +85,7 @@ export default function MarkupPageScreen({navigation, route}: Props) {
   const [activeColor, setActiveColor] = useState(COLORS[0]);
   const [activeTool, setActiveTool] = useState<Tool>('pen');
   const [saving, setSaving] = useState(false);
-  const compositeRef = useRef<View>(null);
+  const compositeRef = useRef<React.ComponentRef<typeof View>>(null);
 
   // `panResponder` below is created exactly once via useRef, so reading
   // `activeColor`/`activeTool` directly inside its callbacks would close

@@ -37,7 +37,7 @@ export default function SignPageScreen({navigation, route}: Props) {
   const [pos, setPos] = useState({x: 0, y: 0});
   const [saving, setSaving] = useState(false);
   const [showGuide, setShowGuide] = useState(true);
-  const compositeRef = useRef<View>(null);
+  const compositeRef = useRef<React.ComponentRef<typeof View>>(null);
   const startPos = useRef({x: 0, y: 0});
 
   // `panResponder` below is created exactly once via useRef, so its
@@ -62,7 +62,7 @@ export default function SignPageScreen({navigation, route}: Props) {
     setSigWidth(clamped);
   }
 
-  function touchDistance(touches: {pageX: number; pageY: number}[]) {
+  function touchDistance(touches: readonly {pageX: number; pageY: number}[]) {
     const [a, b] = touches;
     return Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
   }

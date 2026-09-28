@@ -31,7 +31,7 @@ export default function SignaturePad({onDone, onCancel}: Props) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const [paths, setPaths] = useState<string[]>([]);
   const [currentPath, setCurrentPath] = useState('');
-  const canvasRef = useRef<View>(null);
+  const canvasRef = useRef<React.ComponentRef<typeof View>>(null);
   const [saving, setSaving] = useState(false);
 
   const panResponder = useRef(
