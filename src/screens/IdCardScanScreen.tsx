@@ -144,8 +144,8 @@ export default function IdCardScanScreen({navigation, route}: Props) {
             </View>
             <Text style={styles.hint}>
               A must-have feature! Make a ready-to-print e-copy in under a
-              minute. Content is stored on your device only — nothing is
-              uploaded.
+              minute. Stays on your device unless you turn on Google Drive
+              backup in Settings.
             </Text>
           </ScrollView>
 

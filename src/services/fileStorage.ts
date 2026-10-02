@@ -1,6 +1,15 @@
 import RNFS from 'react-native-fs';
 import { generateId } from '../utils/ids';
-import { FILTER_PREVIEW_CACHE_DIR } from './nativeImageFilter';
+import { FILTER_PREVIEW_CACHE_DIR, compressImage } from './nativeImageFilter';
+
+/** JPEG quality used when a page is permanently saved (see `persistPageImage`
+ * below). Camera captures and filter-baked pages can come in anywhere from
+ * ~90 up to 97+ quality at full sensor resolution - multiple MB per page for
+ * content (scanned text/documents) that compresses losslessly-to-the-eye far
+ * smaller. 90 is the standard "visually lossless" JPEG ceiling: re-encoding
+ * at this quality measurably shrinks the file but no artifact is visible at
+ * normal viewing/zoom levels, even on text. */
+const SAVE_QUALITY = 90;
 
 export const SCANS_ROOT = `${RNFS.DocumentDirectoryPath}/scans`;
 export const EXPORTS_ROOT = `${RNFS.DocumentDirectoryPath}/exports`;
@@ -28,7 +37,11 @@ export async function ensureExportsDir(): Promise<string> {
 
 /**
  * Moves a captured/filtered page image (typically a cache-dir temp file)
- * into permanent per-document storage.
+ * into permanent per-document storage - re-encoding it at `SAVE_QUALITY`
+ * along the way (instead of a plain byte copy) so every page that becomes
+ * part of a saved document is compressed, not just the ones that happened
+ * to pass through a filter bake first (e.g. the "Original" filter, and the
+ * ID Card flow, previously reached this as a raw, uncompressed copy).
  */
 export async function persistPageImage(
   docId: string,
@@ -37,7 +50,12 @@ export async function persistPageImage(
   await ensureDocDir(docId);
   const cleanSource = sourceUri.replace('file://', '');
   const destination = `${docDir(docId)}/page_${generateId()}.jpg`;
-  await RNFS.copyFile(cleanSource, destination);
+  try {
+    await compressImage(cleanSource, destination, SAVE_QUALITY);
+  } catch (error) {
+    // Best-effort - fall back to a plain copy rather than losing the page.
+    await RNFS.copyFile(cleanSource, destination);
+  }
   // Best-effort cleanup of the temp source file.
   RNFS.unlink(cleanSource).catch(() => undefined);
   return destination;
