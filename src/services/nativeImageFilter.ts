@@ -160,6 +160,38 @@ export async function getThumbnail(sourcePath: string): Promise<string> {
   return `file://${resultPath}`;
 }
 
+/**
+ * Crops `sourceUri` to a ratio-based region (0..1 of the upright image,
+ * same convention as `detectDocumentCorners`/`warpPerspective`) and writes
+ * the result to `outputPath`. Used for the live-camera frame guide (e.g.
+ * ID Card mode) instead of the PDF-based `cropImageFile` in pdfExport.ts,
+ * because that path reads the JPEG's raw (EXIF-ignorant) pixel buffer -
+ * fine for crop shapes a user drew on the already-upright preview image,
+ * but wrong for ratios computed against a fresh camera capture, which is
+ * stored sensor-landscape and only appears upright via EXIF rotation.
+ */
+export async function cropRegion(
+  sourceUri: string,
+  outputPath: string,
+  xRatio: number,
+  yRatio: number,
+  widthRatio: number,
+  heightRatio: number,
+  quality: number = 92,
+): Promise<string> {
+  const cleanSource = sourceUri.replace('file://', '');
+  const resultPath = await ImageFilterModule.cropRegion(
+    cleanSource,
+    outputPath,
+    xRatio,
+    yRatio,
+    widthRatio,
+    heightRatio,
+    quality,
+  );
+  return `file://${resultPath}`;
+}
+
 export interface QuadCorners {
   topLeft: {x: number; y: number};
   topRight: {x: number; y: number};

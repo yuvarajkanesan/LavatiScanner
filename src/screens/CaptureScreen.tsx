@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   GestureResponderEvent,
+  Image,
   LayoutChangeEvent,
   Pressable,
   StyleSheet,
@@ -34,7 +35,8 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {CaptureMode, RootStackParamList} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
 import {pickGalleryImages, pickImportFiles} from '../services/filePicker';
-import {cropImageFile} from '../services/pdfExport';
+import {cropRegion} from '../services/nativeImageFilter';
+import {ensureExportsDir} from '../services/fileStorage';
 import {ID_CARD_SUB_MODES, IdCardSubMode} from '../constants/idCardModes';
 import Icon from '../components/Icon';
 import IdCardIllustration from '../components/IdCardIllustration';
@@ -310,14 +312,35 @@ export default function CaptureScreen({navigation, route}: Props) {
     }
   }
 
+  function getImageSize(path: string): Promise<{width: number; height: number}> {
+    return new Promise((resolve, reject) => {
+      Image.getSize(
+        path.startsWith('file://') ? path : `file://${path}`,
+        (width, height) => resolve({width, height}),
+        reject,
+      );
+    });
+  }
+
   // The frame guide shown over the preview (see `FRAME_GUIDE`/`frameGuide`
   // style below) was previously just a visual hint - the saved photo was
   // always the full, uncropped camera frame regardless of what the guide
   // showed, which is why ID card scans captured the whole surroundings
   // instead of just the card. This reproduces the guide's exact on-screen
   // geometry (centered, 32px horizontal inset, capped at 70% height) using
-  // the preview container's measured size, then crops the captured photo
-  // to that same region so the saved file actually matches the guide.
+  // the preview container's measured size, then crops the captured photo to
+  // that same region.
+  //
+  // The preview fills its container with a "cover" fit — the photo is
+  // scaled up until it fully covers the preview box, and whichever
+  // dimension overflows gets cropped off-screen. Since the photo keeps the
+  // camera sensor's own aspect ratio (not the full-screen preview's), the
+  // guide box's on-screen position/size doesn't map 1:1 onto the photo's
+  // pixel grid - naively reusing the same fractions against the photo's
+  // own dimensions skews the result (confirmed on-device: saved ID card
+  // crops came out far wider/flatter than the card ratio shown on-screen).
+  // Inverting that same cover scale+offset finds the exact pixel region of
+  // the photo the guide box visually covers.
   async function cropToFrameGuideIfNeeded(rawPath: string): Promise<string> {
     const aspectRatio = FRAME_GUIDE[mode];
     if (aspectRatio === undefined || previewSize.width === 0) {
@@ -330,18 +353,45 @@ export default function CaptureScreen({navigation, route}: Props) {
       guideHeight = maxHeight;
       guideWidth = guideHeight * aspectRatio;
     }
-    const xRatio = (previewSize.width - guideWidth) / 2 / previewSize.width;
-    const yRatio = (previewSize.height - guideHeight) / 2 / previewSize.height;
-    const widthRatio = guideWidth / previewSize.width;
-    const heightRatio = guideHeight / previewSize.height;
+    const guideX = (previewSize.width - guideWidth) / 2;
+    const guideY = (previewSize.height - guideHeight) / 2;
+
+    let photoWidth: number;
+    let photoHeight: number;
     try {
-      return await cropImageFile(
+      const size = await getImageSize(rawPath);
+      photoWidth = size.width;
+      photoHeight = size.height;
+    } catch (error) {
+      return rawPath;
+    }
+    if (!photoWidth || !photoHeight) {
+      return rawPath;
+    }
+
+    const coverScale = Math.max(
+      previewSize.width / photoWidth,
+      previewSize.height / photoHeight,
+    );
+    const offsetX = (photoWidth * coverScale - previewSize.width) / 2;
+    const offsetY = (photoHeight * coverScale - previewSize.height) / 2;
+
+    const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+    const xRatio = clamp01((offsetX + guideX) / coverScale / photoWidth);
+    const yRatio = clamp01((offsetY + guideY) / coverScale / photoHeight);
+    const widthRatio = clamp01(guideWidth / coverScale / photoWidth);
+    const heightRatio = clamp01(guideHeight / coverScale / photoHeight);
+
+    try {
+      const exportsDir = await ensureExportsDir();
+      const outputPath = `${exportsDir}/frameguide_${Date.now()}.jpg`;
+      return await cropRegion(
         rawPath,
+        outputPath,
         xRatio,
         yRatio,
         widthRatio,
         heightRatio,
-        `frameguide_${Date.now()}`,
       );
     } catch (error) {
       // Best-effort — fall back to the uncropped photo rather than losing

@@ -823,6 +823,61 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
     }.start()
   }
 
+  /**
+   * Crops to a ratio-based region (0..1 of the EXIF-corrected, upright
+   * image) and saves as JPEG. Used by the live-camera frame guide (e.g. ID
+   * Card mode) to cut the captured photo down to just the on-screen guide
+   * box. Goes through `decodeSampledBitmap` (same as every other method
+   * here) specifically so the crop ratios are applied to the same upright
+   * orientation the rest of the app already sees - cropping the raw,
+   * sensor-landscape buffer directly (as the old PDF-based crop path did)
+   * produced a correctly-framed but sideways result.
+   */
+  @ReactMethod
+  fun cropRegion(
+      inputPath: String,
+      outputPath: String,
+      xRatio: Double,
+      yRatio: Double,
+      widthRatio: Double,
+      heightRatio: Double,
+      quality: Int,
+      promise: Promise
+  ) {
+    Thread {
+      var decoded: Bitmap? = null
+      var cropped: Bitmap? = null
+      try {
+        val cleanInput = inputPath.removePrefix("file://")
+        decoded = decodeSampledBitmap(cleanInput, -1)
+        val w = decoded.width
+        val h = decoded.height
+        val cropX = (xRatio * w).toInt().coerceIn(0, w - 1)
+        val cropY = (yRatio * h).toInt().coerceIn(0, h - 1)
+        val cropW = (widthRatio * w).toInt().coerceIn(1, w - cropX)
+        val cropH = (heightRatio * h).toInt().coerceIn(1, h - cropY)
+
+        cropped = Bitmap.createBitmap(decoded, cropX, cropY, cropW, cropH)
+        if (cropped !== decoded) {
+          decoded.recycle()
+          decoded = null
+        }
+
+        val cleanOutput = outputPath.removePrefix("file://")
+        FileOutputStream(File(cleanOutput)).use { out ->
+          cropped.compress(Bitmap.CompressFormat.JPEG, quality, out)
+        }
+
+        promise.resolve(cleanOutput)
+      } catch (e: Exception) {
+        promise.reject("IMAGE_CROP_ERROR", e.message, e)
+      } finally {
+        decoded?.let { if (!it.isRecycled) it.recycle() }
+        cropped?.let { if (!it.isRecycled) it.recycle() }
+      }
+    }.start()
+  }
+
   private fun boxBlur(src: IntArray, w: Int, h: Int, r: Int): IntArray {
     val div = 2 * r + 1
     val tmp = IntArray(w * h)
