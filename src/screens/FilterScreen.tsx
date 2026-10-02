@@ -43,7 +43,7 @@ export default function FilterScreen({navigation, route}: Props) {
   );
 
   const [selectedFilter, setSelectedFilter] = useState<FilterType>(
-    page?.filter ?? 'original',
+    page?.filter ?? 'auto',
   );
   const [busy, setBusy] = useState<'add' | 'done' | 'rotate' | null>(null);
 
@@ -109,12 +109,20 @@ export default function FilterScreen({navigation, route}: Props) {
   }
 
   async function handleRotateLeft() {
+    await rotatePage(270);
+  }
+
+  async function handleRotateRight() {
+    await rotatePage(90);
+  }
+
+  async function rotatePage(degrees: 90 | 270) {
     try {
       setBusy('rotate');
       const rotatedUri = await rotateImageFile90(
         page!.rawUri,
         `rotate_${page!.id}_${generateId()}`,
-        270,
+        degrees,
       );
       session.updatePage(page!.id, {rawUri: rotatedUri});
     } catch (error) {
@@ -319,6 +327,19 @@ export default function FilterScreen({navigation, route}: Props) {
               <>
                 <Icon name="rotate-left" size={22} color={colors.white} />
                 <Text style={styles.iconButtonText}>Left</Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.iconButton}
+            disabled={busy !== null}
+            onPress={handleRotateRight}>
+            {busy === 'rotate' ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <>
+                <Icon name="rotate-right" size={22} color={colors.white} />
+                <Text style={styles.iconButtonText}>Right</Text>
               </>
             )}
           </TouchableOpacity>

@@ -16,12 +16,12 @@ export interface FilterOption {
 export const FILTER_OPTIONS: FilterOption[] = [
   {id: 'original', label: 'Original'},
   {id: 'auto', label: 'Auto'},
-  {id: 'enhanced', label: 'Enhanced'},
   {id: 'grayscale', label: 'Grayscale'},
+  {id: 'sharpen', label: 'Sharpen'},
+  {id: 'enhanced', label: 'Enhanced'},
   {id: 'bw', label: 'B&W'},
   {id: 'lighten', label: 'Lighten'},
   {id: 'shadowRemoval', label: 'Shadow Removal'},
   {id: 'eco', label: 'Eco'},
-  {id: 'sharpen', label: 'Sharpen'},
   {id: 'invert', label: 'Night'},
 ];

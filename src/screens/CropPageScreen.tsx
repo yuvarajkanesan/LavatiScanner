@@ -9,6 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import Svg, {Line} from 'react-native-svg';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
@@ -51,6 +52,10 @@ export default function CropPageScreen({navigation, route}: Props) {
   });
   const [rect, setRect] = useState<Rect | null>(null);
   const [saving, setSaving] = useState(false);
+  const [activeCorner, setActiveCorner] = useState<Corner | null>(null);
+  const [touchPoint, setTouchPoint] = useState<{x: number; y: number} | null>(
+    null,
+  );
   const rectStart = useRef<Rect | null>(null);
 
   // The PanResponders below are created exactly once via useRef, so their
@@ -106,6 +111,7 @@ export default function CropPageScreen({navigation, route}: Props) {
       onStartShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
         rectStart.current = rectRef.current;
+        setActiveCorner(corner);
       },
       onPanResponderMove: (_evt, gesture) => {
         const start = rectStart.current;
@@ -145,6 +151,18 @@ export default function CropPageScreen({navigation, route}: Props) {
           );
         }
         updateRect({x, y, width, height});
+        setTouchPoint({
+          x: corner === 'tl' || corner === 'bl' ? x : x + width,
+          y: corner === 'tl' || corner === 'tr' ? y : y + height,
+        });
+      },
+      onPanResponderRelease: () => {
+        setActiveCorner(null);
+        setTouchPoint(null);
+      },
+      onPanResponderTerminate: () => {
+        setActiveCorner(null);
+        setTouchPoint(null);
       },
     });
   }
@@ -303,6 +321,17 @@ export default function CropPageScreen({navigation, route}: Props) {
               ]}
               {...brResponder.panHandlers}
             />
+
+            {activeCorner && touchPoint && display.width > 0 ? (
+              <Loupe
+                point={touchPoint}
+                neighbors={getRectNeighborPoints(activeCorner, rect)}
+                displayWidth={display.width}
+                displayHeight={display.height}
+                filePath={filePath}
+                accentColor={colors.accent}
+              />
+            ) : null}
           </View>
         )}
       </View>
@@ -323,6 +352,127 @@ export default function CropPageScreen({navigation, route}: Props) {
     </View>
   );
 }
+
+const LOUPE_SIZE = 110;
+const LOUPE_ZOOM = 2.5;
+const LOUPE_MARGIN = 16;
+const EDGE_LINE_THICKNESS = 4;
+
+/** The two rect edges meeting at `corner` - used to draw the loupe's corner
+ * marker as the *actual* crop boundary (matching the reference screenshot's
+ * angled edge lines) instead of a generic centered "+". */
+function getRectNeighborPoints(
+  corner: Corner,
+  rect: Rect,
+): [{x: number; y: number}, {x: number; y: number}] {
+  const corners: Record<Corner, {x: number; y: number}> = {
+    tl: {x: rect.x, y: rect.y},
+    tr: {x: rect.x + rect.width, y: rect.y},
+    br: {x: rect.x + rect.width, y: rect.y + rect.height},
+    bl: {x: rect.x, y: rect.y + rect.height},
+  };
+  const order: Corner[] = ['tl', 'tr', 'br', 'bl'];
+  const i = order.indexOf(corner);
+  const next = order[(i + 1) % order.length];
+  const prev = order[(i + order.length - 1) % order.length];
+  return [corners[next], corners[prev]];
+}
+
+function Loupe({
+  point,
+  neighbors,
+  displayWidth,
+  displayHeight,
+  filePath,
+  accentColor,
+}: {
+  point: {x: number; y: number};
+  neighbors: [{x: number; y: number}, {x: number; y: number}];
+  displayWidth: number;
+  displayHeight: number;
+  filePath: string;
+  accentColor: string;
+}) {
+  // Pinned to whichever corner of the stage is diagonally opposite the
+  // touch point, rather than a single fixed spot - far enough from the
+  // finger to never be covered by the hand that's dragging (the original
+  // problem a fixed top-left spot solved), but it now also tracks which
+  // edge is actually being adjusted instead of sitting in the same place
+  // the whole time.
+  const left =
+    point.x < displayWidth / 2
+      ? displayWidth - LOUPE_SIZE - LOUPE_MARGIN
+      : LOUPE_MARGIN;
+  const top =
+    point.y < displayHeight / 2
+      ? displayHeight - LOUPE_SIZE - LOUPE_MARGIN
+      : LOUPE_MARGIN;
+
+  const translateX = LOUPE_SIZE / 2 - point.x * LOUPE_ZOOM;
+  const translateY = LOUPE_SIZE / 2 - point.y * LOUPE_ZOOM;
+
+  // Each edge is drawn as a ray from the loupe's center toward its
+  // neighboring corner (zoomed + extended to clear the circle), so the
+  // marker is the real angle of that edge instead of an axis-aligned "+".
+  const edgeEndpoints = neighbors.map(neighbor => {
+    const dx = neighbor.x - point.x;
+    const dy = neighbor.y - point.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const scale = LOUPE_SIZE / length;
+    return {
+      x: LOUPE_SIZE / 2 + dx * scale,
+      y: LOUPE_SIZE / 2 + dy * scale,
+    };
+  });
+
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        loupeStyles.container,
+        {left, top, borderColor: accentColor},
+      ]}>
+      <Image
+        source={{uri: `file://${filePath}`}}
+        resizeMode="contain"
+        style={{
+          position: 'absolute',
+          width: displayWidth * LOUPE_ZOOM,
+          height: displayHeight * LOUPE_ZOOM,
+          transform: [{translateX}, {translateY}],
+        }}
+      />
+      <Svg
+        style={StyleSheet.absoluteFill}
+        width={LOUPE_SIZE}
+        height={LOUPE_SIZE}>
+        {edgeEndpoints.map((end, i) => (
+          <Line
+            key={i}
+            x1={LOUPE_SIZE / 2}
+            y1={LOUPE_SIZE / 2}
+            x2={end.x}
+            y2={end.y}
+            stroke={accentColor}
+            strokeWidth={EDGE_LINE_THICKNESS}
+          />
+        ))}
+      </Svg>
+    </View>
+  );
+}
+
+const loupeStyles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    width: LOUPE_SIZE,
+    height: LOUPE_SIZE,
+    borderRadius: LOUPE_SIZE / 2,
+    borderWidth: 3,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+});
 
 const HANDLE_SIZE = 28;
 
@@ -355,7 +505,7 @@ const createStyles = (colors: AppColors) =>
     },
     cropBox: {
       position: 'absolute',
-      borderWidth: 2,
+      borderWidth: 3,
     },
     gridLineV: {
       position: 'absolute',
@@ -381,7 +531,7 @@ const createStyles = (colors: AppColors) =>
       marginTop: -HANDLE_SIZE / 2,
       borderRadius: HANDLE_SIZE / 2,
       backgroundColor: colors.white,
-      borderWidth: 2,
+      borderWidth: 3,
       borderColor: colors.accent,
     },
     applyButton: {

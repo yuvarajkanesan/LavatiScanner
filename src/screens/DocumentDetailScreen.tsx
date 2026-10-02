@@ -462,12 +462,16 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
   // hidden RN view — the view-capture approach proved unreliable on-device
   // and produced solid-black output. This reuses the same PDF round-trip
   // machinery the PDF editor's rotate/export already relies on correctly.
-  async function handleRotatePage(page: Page): Promise<string | null> {
+  async function handleRotatePage(
+    page: Page,
+    degrees: 90 | 270 = 90,
+  ): Promise<string | null> {
     setRotatingPageId(page.id);
     try {
       const rotatedUri = await rotateImageFile90(
         page.filePath,
         `rot_${page.id}`,
+        degrees,
       );
       const newPath = await persistPageImage(docId, rotatedUri);
       await deletePageFile(page.filePath);
@@ -608,14 +612,14 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     });
   }
 
-  async function handleRotatePreview() {
+  async function handleRotatePreview(degrees: 90 | 270 = 90) {
     if (!previewPage) {
       return;
     }
     const page = previewPage;
     try {
       setPreviewBusy('rotate');
-      const newPath = await handleRotatePage(page);
+      const newPath = await handleRotatePage(page, degrees);
       if (newPath) {
         // Keep the preview open on the same page, just pointing at the
         // freshly rotated file — closing here used to flash the modal shut
@@ -1211,12 +1215,20 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
               onPress={handleCropPreview}
             />
             <PreviewToolbarButton
-              icon={f.rotate.icon}
-              family={f.rotate.family}
-              label="Rotate"
+              icon={f.rotateLeft.icon}
+              family={f.rotateLeft.family}
+              label="Left"
               disabled={previewBusy !== null}
               loading={previewBusy === 'rotate'}
-              onPress={handleRotatePreview}
+              onPress={() => handleRotatePreview(270)}
+            />
+            <PreviewToolbarButton
+              icon={f.rotate.icon}
+              family={f.rotate.family}
+              label="Right"
+              disabled={previewBusy !== null}
+              loading={previewBusy === 'rotate'}
+              onPress={() => handleRotatePreview(90)}
             />
             <PreviewToolbarButton
               icon="share"

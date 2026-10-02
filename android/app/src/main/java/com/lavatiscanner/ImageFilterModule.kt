@@ -288,13 +288,30 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
 
     return when (filterId) {
       "auto" -> {
-        val r = divideByBackground(extractChannel(pixels, 16), w, h, bgRadius)
-        val g = divideByBackground(extractChannel(pixels, 8), w, h, bgRadius)
-        val b = divideByBackground(extractChannel(pixels, 0), w, h, bgRadius)
-        var out = combineRGB(r, g, b)
-        out = contrastBoost(out, 1.15f)
-        out = boostSaturation(out, 1.2f)
-        sharpenARGB(out, w, h, 0.3f)
+        // The "clarity" look of a good scanner app (crisp text, punchy
+        // local contrast) comes from local-contrast enhancement (CLAHE),
+        // not from a flat global contrast/brightness lift. divideByBackground
+        // (a *global* paper-tone normalization) was tried here before and
+        // blew out non-paper test shots with a color cast, so this uses the
+        // same clamped CLAHE-ratio technique as "enhanced" instead - safer,
+        // because it only redistributes local contrast rather than
+        // rescaling the whole image against an assumed uniform background -
+        // at a lower clip limit so it stays a step below "enhanced" rather
+        // than duplicating it, plus the same brightness/sharpen as before.
+        val luma = toGray(pixels)
+        val claheLuma = clahe(luma, w, h, 8, 8, 2.0)
+        val clarified = IntArray(pixels.size)
+        for (i in pixels.indices) {
+          val l0 = max(1, luma[i])
+          val ratio = (claheLuma[i].toFloat() / l0).coerceIn(0.4f, 2.2f)
+          val p = pixels[i]
+          val r = (((p shr 16) and 0xFF) * ratio).toInt().coerceIn(0, 255)
+          val g = (((p shr 8) and 0xFF) * ratio).toInt().coerceIn(0, 255)
+          val b = ((p and 0xFF) * ratio).toInt().coerceIn(0, 255)
+          clarified[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+        }
+        val out = brightnessBoost(contrastBoost(clarified, 1.05f), 10)
+        sharpenARGB(out, w, h, 0.7f)
       }
       "enhanced" -> {
         val r0 = divideByBackground(extractChannel(pixels, 16), w, h, bgRadius)
@@ -317,19 +334,22 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
           recombined[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
         }
         val saturated = boostSaturation(recombined, 1.12f)
-        sharpenARGB(saturated, w, h, 0.35f)
+        sharpenARGB(saturated, w, h, 0.6f)
       }
       "grayscale" -> {
         val gray = toGray(pixels)
         val claheGray = clahe(gray, w, h, 8, 8, 2.5)
-        sharpenARGB(grayToARGB(claheGray), w, h, 0.25f)
+        sharpenARGB(grayToARGB(claheGray), w, h, 0.55f)
       }
       "bw" -> {
         val gray = sharpenGray(toGray(pixels), w, h, 0.4f)
         val localMean = boxBlur(gray, w, h, localMeanRadius)
         val out = IntArray(gray.size)
+        // A pixel needs to be darker than this much below its local mean to
+        // be marked black - a bigger (more negative) margin means fewer
+        // borderline pixels end up black, i.e. a visibly brighter page.
         for (i in gray.indices) {
-          out[i] = if (gray[i] < localMean[i] - 10) 0 else 255
+          out[i] = if (gray[i] < localMean[i] - 24) 0 else 255
         }
         grayToARGB(out)
       }
@@ -357,7 +377,7 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         for (i in gray.indices) {
           diff[i] = 255 - abs(gray[i] - bg[i])
         }
-        sharpenARGB(grayToARGB(normalizeGray(diff)), w, h, 0.25f)
+        sharpenARGB(grayToARGB(normalizeGray(diff)), w, h, 0.45f)
       }
       "eco" -> {
         val gray = sharpenGray(toGray(pixels), w, h, 0.4f)
@@ -369,7 +389,7 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         grayToARGB(out)
       }
       "sharpen" -> sharpenARGB(pixels, w, h, 0.7f)
-      "invert" -> invertPixels(pixels)
+      "invert" -> sharpenARGB(invertPixels(pixels), w, h, 0.5f)
       else -> pixels
     }
   }
@@ -414,6 +434,18 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
       val r = 255 - ((p shr 16) and 0xFF)
       val g = 255 - ((p shr 8) and 0xFF)
       val b = 255 - (p and 0xFF)
+      out[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+    }
+    return out
+  }
+
+  private fun brightnessBoost(pixels: IntArray, delta: Int): IntArray {
+    val out = IntArray(pixels.size)
+    for (i in pixels.indices) {
+      val p = pixels[i]
+      val r = (((p shr 16) and 0xFF) + delta).coerceIn(0, 255)
+      val g = (((p shr 8) and 0xFF) + delta).coerceIn(0, 255)
+      val b = ((p and 0xFF) + delta).coerceIn(0, 255)
       out[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
     }
     return out

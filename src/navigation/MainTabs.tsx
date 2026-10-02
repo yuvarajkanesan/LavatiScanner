@@ -181,6 +181,7 @@ export default function MainTabs() {
         component={AllFilesScreen}
         options={{
           title: 'All Files',
+          headerShown: false,
           tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.AllFiles],
         }}
       />
@@ -193,6 +194,7 @@ export default function MainTabs() {
         options={{
           tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Tools],
           tabBarButton: () => null,
+          tabBarItemStyle: {display: 'none'},
         }}
       />
       <Tab.Screen
@@ -201,6 +203,7 @@ export default function MainTabs() {
         options={{
           tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Settings],
           tabBarButton: () => null,
+          tabBarItemStyle: {display: 'none'},
         }}
       />
     </Tab.Navigator>

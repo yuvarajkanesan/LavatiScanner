@@ -2,6 +2,7 @@ import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   GestureResponderEvent,
+  LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -33,6 +34,7 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {CaptureMode, RootStackParamList} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
 import {pickGalleryImages, pickImportFiles} from '../services/filePicker';
+import {cropImageFile} from '../services/pdfExport';
 import {ID_CARD_SUB_MODES, IdCardSubMode} from '../constants/idCardModes';
 import Icon from '../components/Icon';
 import IdCardIllustration from '../components/IdCardIllustration';
@@ -133,7 +135,7 @@ export default function CaptureScreen({navigation, route}: Props) {
   const [exposure, setExposure] = useState(0);
   const [exposureVisible, setExposureVisible] = useState(false);
   const [capturing, setCapturing] = useState(false);
-  const [isScreenActive, setIsScreenActive] = useState(true);
+  const [isScreenActive, setIsScreenActive] = useState(false);
   const [isSteady, setIsSteady] = useState(false);
   const [introVisible, setIntroVisible] = useState(() =>
     needsIntro(route.params?.mode ?? 'docs', !!backCapture),
@@ -145,6 +147,11 @@ export default function CaptureScreen({navigation, route}: Props) {
     x: number;
     y: number;
   } | null>(null);
+  // Measured on layout so the post-capture ID-card crop matches exactly
+  // what the on-screen frame guide shows - the preview's actual rendered
+  // size (screen height minus the mode bar/bottom bar) isn't knowable from
+  // styles alone since those siblings aren't fixed-height.
+  const [previewSize, setPreviewSize] = useState({width: 0, height: 0});
 
   const cameraRef = useRef<CameraRef>(null);
   const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -184,8 +191,19 @@ export default function CaptureScreen({navigation, route}: Props) {
 
   useFocusEffect(
     useCallback(() => {
-      setIsScreenActive(true);
-      return () => setIsScreenActive(false);
+      // A capture flow that retakes (Scan -> Trim -> Retake -> Scan) fully
+      // unmounts and remounts this screen each time via navigation.replace,
+      // so the previous Camera instance's native teardown (CameraX session
+      // stop/release) is still in flight, asynchronously, when this fresh
+      // one would otherwise immediately try to activate and claim the same
+      // physical camera device - causing CameraX to throw "Camera is not
+      // active" on the new session. Give the old session a moment to
+      // actually finish releasing the device before activating this one.
+      const timeout = setTimeout(() => setIsScreenActive(true), 300);
+      return () => {
+        clearTimeout(timeout);
+        setIsScreenActive(false);
+      };
     }, []),
   );
 
@@ -219,6 +237,21 @@ export default function CaptureScreen({navigation, route}: Props) {
 
   function flipCamera() {
     setCameraPosition(prev => (prev === 'back' ? 'front' : 'back'));
+  }
+
+  // The exposure/torch "updater" effects inside vision-camera apply their
+  // value as soon as the session controller resolves, which can briefly
+  // land just before CameraX actually marks the session active (e.g. right
+  // after mount, or right after a flip/retake remount) - CameraX correctly
+  // rejects that with "Camera is not active" even though the camera goes on
+  // to start normally a moment later. It's noisy, not actionable, so it's
+  // swallowed here instead of surfacing as a scary red error screen; any
+  // other camera error still logs normally.
+  function handleCameraError(error: Error) {
+    if (error.message?.includes('Camera is not active')) {
+      return;
+    }
+    console.error(error);
   }
 
   function adjustExposure(delta: number) {
@@ -277,8 +310,48 @@ export default function CaptureScreen({navigation, route}: Props) {
     }
   }
 
+  // The frame guide shown over the preview (see `FRAME_GUIDE`/`frameGuide`
+  // style below) was previously just a visual hint - the saved photo was
+  // always the full, uncropped camera frame regardless of what the guide
+  // showed, which is why ID card scans captured the whole surroundings
+  // instead of just the card. This reproduces the guide's exact on-screen
+  // geometry (centered, 32px horizontal inset, capped at 70% height) using
+  // the preview container's measured size, then crops the captured photo
+  // to that same region so the saved file actually matches the guide.
+  async function cropToFrameGuideIfNeeded(rawPath: string): Promise<string> {
+    const aspectRatio = FRAME_GUIDE[mode];
+    if (aspectRatio === undefined || previewSize.width === 0) {
+      return rawPath;
+    }
+    let guideWidth = previewSize.width - 64;
+    let guideHeight = guideWidth / aspectRatio;
+    const maxHeight = previewSize.height * 0.7;
+    if (guideHeight > maxHeight) {
+      guideHeight = maxHeight;
+      guideWidth = guideHeight * aspectRatio;
+    }
+    const xRatio = (previewSize.width - guideWidth) / 2 / previewSize.width;
+    const yRatio = (previewSize.height - guideHeight) / 2 / previewSize.height;
+    const widthRatio = guideWidth / previewSize.width;
+    const heightRatio = guideHeight / previewSize.height;
+    try {
+      return await cropImageFile(
+        rawPath,
+        xRatio,
+        yRatio,
+        widthRatio,
+        heightRatio,
+        `frameguide_${Date.now()}`,
+      );
+    } catch (error) {
+      // Best-effort — fall back to the uncropped photo rather than losing
+      // the capture entirely.
+      return rawPath;
+    }
+  }
+
   async function handleCapture() {
-    if (!cameraRef.current || capturing) {
+    if (capturing) {
       return;
     }
     try {
@@ -288,11 +361,12 @@ export default function CaptureScreen({navigation, route}: Props) {
         withTiming(1, {duration: 60}),
         withTiming(0, {duration: 200}),
       );
-      const photo = await cameraRef.current.takePhoto({
-        flash,
-        enableShutterSound: false,
-      });
-      await routeCapturedPhoto(photo.path);
+      const photo = await photoOutput.capturePhotoToFile(
+        {flashMode: flash, enableShutterSound: false},
+        {},
+      );
+      const finalPath = await cropToFrameGuideIfNeeded(photo.filePath);
+      await routeCapturedPhoto(finalPath);
     } catch (error) {
       setCapturing(false);
     }
@@ -397,18 +471,23 @@ export default function CaptureScreen({navigation, route}: Props) {
 
   return (
     <View style={styles.container}>
-      <View style={styles.preview}>
+      <View
+        style={styles.preview}
+        onLayout={(e: LayoutChangeEvent) => {
+          const {width, height} = e.nativeEvent.layout;
+          setPreviewSize({width, height});
+        }}>
         {device ? (
           <Camera
             ref={cameraRef}
             style={StyleSheet.absoluteFill}
             device={device}
             isActive={isScreenActive}
-            photo={true}
-            photoQualityBalance={hd ? 'quality' : 'speed'}
-            torch={flash === 'on' && cameraPosition === 'back' ? 'on' : 'off'}
-            enableZoomGesture
+            outputs={[photoOutput]}
+            torchMode={flash === 'on' && cameraPosition === 'back' ? 'on' : 'off'}
+            enableNativeZoomGesture
             exposure={exposure}
+            onError={handleCameraError}
           />
         ) : (
           <View style={styles.deviceLoading}>

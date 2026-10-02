@@ -9,7 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import Svg, {Polygon} from 'react-native-svg';
+import Svg, {Line, Polygon} from 'react-native-svg';
 import RNFS from 'react-native-fs';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
@@ -49,6 +49,7 @@ export default function TrimPageScreen({navigation, route}: Props) {
   const [corners, setCorners] = useState<Corners | null>(null);
   const [autoCrop, setAutoCrop] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [activeCorner, setActiveCorner] = useState<CornerKey | null>(null);
 
   // Refs kept in sync with the state above on every update — the
   // PanResponders below are created once via useRef, so reading state
@@ -135,6 +136,7 @@ export default function TrimPageScreen({navigation, route}: Props) {
         startCorner.current = cornersRef.current
           ? cornersRef.current[key]
           : null;
+        setActiveCorner(key);
       },
       onPanResponderMove: (_evt, gesture) => {
         const start = startCorner.current;
@@ -148,6 +150,12 @@ export default function TrimPageScreen({navigation, route}: Props) {
         updateCorners({...current, [key]: {x, y}});
         userEditedRef.current = true;
         setAutoCrop(false);
+      },
+      onPanResponderRelease: () => {
+        setActiveCorner(null);
+      },
+      onPanResponderTerminate: () => {
+        setActiveCorner(null);
       },
     });
   }
@@ -215,9 +223,9 @@ export default function TrimPageScreen({navigation, route}: Props) {
         session.updatePage(editingPageId, {rawUri: `file://${warpedPath}`});
         navigation.replace('Filter', {pageId: editingPageId});
       } else {
-        // Freshly captured pages default to the color-preserving "Enhanced"
-        // look instead of the untouched photo.
-        const pageId = session.addPage(`file://${warpedPath}`, 'enhanced');
+        // Freshly captured pages default to "Auto" instead of the
+        // untouched photo.
+        const pageId = session.addPage(`file://${warpedPath}`, 'auto');
         navigation.replace('Filter', {pageId});
       }
     } catch (error) {
@@ -252,7 +260,7 @@ export default function TrimPageScreen({navigation, route}: Props) {
                 points={polygonPoints}
                 fill="rgba(28,160,222,0.2)"
                 stroke={colors.accent}
-                strokeWidth={2}
+                strokeWidth={3}
               />
             </Svg>
 
@@ -260,6 +268,17 @@ export default function TrimPageScreen({navigation, route}: Props) {
             <Handle point={corners.tr} responder={trResponder} />
             <Handle point={corners.br} responder={brResponder} />
             <Handle point={corners.bl} responder={blResponder} />
+
+            {activeCorner && corners && display.width > 0 ? (
+              <Loupe
+                point={corners[activeCorner]}
+                neighbors={getNeighborPoints(activeCorner, corners)}
+                displayWidth={display.width}
+                displayHeight={display.height}
+                filePath={rawUri.replace('file://', '')}
+                accentColor={colors.accent}
+              />
+            ) : null}
           </View>
         )}
       </View>
@@ -302,6 +321,119 @@ export default function TrimPageScreen({navigation, route}: Props) {
   );
 }
 
+const LOUPE_SIZE = 110;
+const LOUPE_ZOOM = 2.5;
+const LOUPE_MARGIN = 16;
+const EDGE_LINE_THICKNESS = 4;
+
+/** The two polygon edges meeting at `key` - used to draw the loupe's
+ * corner marker as the *actual* crop boundary (matching the reference
+ * screenshot's angled edge lines) instead of a generic centered "+",
+ * since a trimmed page's corners aren't axis-aligned like a plain rect's. */
+function getNeighborPoints(key: CornerKey, corners: Corners): [Point, Point] {
+  const order: CornerKey[] = ['tl', 'tr', 'br', 'bl'];
+  const i = order.indexOf(key);
+  const next = order[(i + 1) % order.length];
+  const prev = order[(i + order.length - 1) % order.length];
+  return [corners[next], corners[prev]];
+}
+
+function Loupe({
+  point,
+  neighbors,
+  displayWidth,
+  displayHeight,
+  filePath,
+  accentColor,
+}: {
+  point: Point;
+  neighbors: [Point, Point];
+  displayWidth: number;
+  displayHeight: number;
+  filePath: string;
+  accentColor: string;
+}) {
+  // Pinned to whichever corner of the stage is diagonally opposite the
+  // touch point, rather than a single fixed spot - far enough from the
+  // finger to never be covered by the hand that's dragging (the original
+  // problem a fixed top-left spot solved), but it now also tracks which
+  // edge is actually being adjusted instead of sitting in the same place
+  // the whole time.
+  const left =
+    point.x < displayWidth / 2
+      ? displayWidth - LOUPE_SIZE - LOUPE_MARGIN
+      : LOUPE_MARGIN;
+  const top =
+    point.y < displayHeight / 2
+      ? displayHeight - LOUPE_SIZE - LOUPE_MARGIN
+      : LOUPE_MARGIN;
+
+  const translateX = LOUPE_SIZE / 2 - point.x * LOUPE_ZOOM;
+  const translateY = LOUPE_SIZE / 2 - point.y * LOUPE_ZOOM;
+
+  // Each edge is drawn as a ray from the loupe's center toward its
+  // neighboring corner (zoomed + extended to clear the circle), so the
+  // marker is the real angle of that edge instead of an axis-aligned "+".
+  const edgeEndpoints = neighbors.map(neighbor => {
+    const dx = neighbor.x - point.x;
+    const dy = neighbor.y - point.y;
+    const length = Math.hypot(dx, dy) || 1;
+    const scale = LOUPE_SIZE / length;
+    return {
+      x: LOUPE_SIZE / 2 + dx * scale,
+      y: LOUPE_SIZE / 2 + dy * scale,
+    };
+  });
+
+  return (
+    <View
+      pointerEvents="none"
+      style={[
+        loupeStyles.container,
+        {left, top, borderColor: accentColor},
+      ]}>
+      <Image
+        source={{uri: `file://${filePath}`}}
+        resizeMode="contain"
+        style={{
+          position: 'absolute',
+          width: displayWidth * LOUPE_ZOOM,
+          height: displayHeight * LOUPE_ZOOM,
+          transform: [{translateX}, {translateY}],
+        }}
+      />
+      <Svg
+        style={StyleSheet.absoluteFill}
+        width={LOUPE_SIZE}
+        height={LOUPE_SIZE}>
+        {edgeEndpoints.map((end, i) => (
+          <Line
+            key={i}
+            x1={LOUPE_SIZE / 2}
+            y1={LOUPE_SIZE / 2}
+            x2={end.x}
+            y2={end.y}
+            stroke={accentColor}
+            strokeWidth={EDGE_LINE_THICKNESS}
+          />
+        ))}
+      </Svg>
+    </View>
+  );
+}
+
+const loupeStyles = StyleSheet.create({
+  container: {
+    position: 'absolute',
+    width: LOUPE_SIZE,
+    height: LOUPE_SIZE,
+    borderRadius: LOUPE_SIZE / 2,
+    borderWidth: 3,
+    overflow: 'hidden',
+    backgroundColor: '#000',
+  },
+});
+
 const HANDLE_SIZE = 28;
 
 function Handle({
@@ -328,7 +460,7 @@ const handleStyles = StyleSheet.create({
     marginTop: -HANDLE_SIZE / 2,
     borderRadius: HANDLE_SIZE / 2,
     backgroundColor: '#FFFFFF',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: colors.accent,
   },
 });

@@ -25,6 +25,7 @@ export const documentFeatureIcons: Record<
   | 'pageName'
   | 'editPdf'
   | 'rotate'
+  | 'rotateLeft'
   | 'collage'
   | 'shareEmail'
   | 'duplicate'
@@ -66,6 +67,7 @@ export const documentFeatureIcons: Record<
     color: '#6366F1',
   },
   rotate: {icon: 'rotate-right', family: 'community', color: '#0891B2'},
+  rotateLeft: {icon: 'rotate-left', family: 'community', color: '#0891B2'},
   collage: {icon: 'view-grid-outline', family: 'community', color: '#F97316'},
   shareEmail: {icon: 'email-send-outline', family: 'community', color: '#0EA5E9'},
   duplicate: {icon: 'content-copy', family: 'community', color: '#8B5CF6'},
