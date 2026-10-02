@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Privacy Policy — Lavati Scanner</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --text: #1a1a1a;
+    --muted: #5a5a5a;
+    --accent: #0891B2;
+    --border: #e5e5e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #121212; --text: #f0f0f0; --muted: #a0a0a0; --border: #2a2a2a; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 32px 20px 64px;
+  }
+  h1 {
+    font-size: 26px;
+    margin-bottom: 4px;
+  }
+  .updated {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 28px;
+  }
+  h2 {
+    font-size: 17px;
+    margin-top: 32px;
+    margin-bottom: 8px;
+    border-top: 1px solid var(--border);
+    padding-top: 24px;
+  }
+  h2:first-of-type { border-top: none; padding-top: 0; }
+  p, li { font-size: 15px; color: var(--text); }
+  ul { padding-left: 20px; }
+  li { margin-bottom: 6px; }
+  .muted { color: var(--muted); }
+  a { color: var(--accent); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th { background: rgba(8,145,178,0.08); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Privacy Policy</h1>
+  <p class="updated">Lavati Scanner &middot; Last updated: October 2026</p>
+
+  <p>This Privacy Policy explains what data Lavati Scanner ("the App") accesses, how it's
+  used, and what control you have over it. The short version: your scans stay on your
+  device unless you explicitly turn on Google Drive backup, and we (the developer) never
+  receive or see your documents.</p>
+
+  <h2>1. What the App accesses</h2>
+  <table>
+    <tr><th>Permission / data</th><th>Why</th></tr>
+    <tr><td>Camera</td><td>To capture documents, ID cards, and other images you choose to scan.</td></tr>
+    <tr><td>Vibration</td><td>Haptic feedback on capture (e.g. the shutter button).</td></tr>
+    <tr><td>Internet</td><td>Only used when you choose to sign in and back up to Google Drive (see below).</td></tr>
+    <tr><td>Storage</td><td>Your scans, their SQLite index, and exported files are stored in the App's private
+    storage on your device.</td></tr>
+  </table>
+
+  <h2>2. Where your content lives</h2>
+  <p>Every document, page image, and OCR result you create is processed and stored
+  entirely on your device. Text recognition (OCR) runs on-device via Google's ML Kit
+  library — no image or text is sent to a server to be recognized. The App has no backend
+  server of its own and does not transmit your documents anywhere by default.</p>
+
+  <h2>3. Optional Google Drive backup</h2>
+  <p>If you choose to turn on Drive backup in Settings, the App will:</p>
+  <ul>
+    <li>Ask you to sign in with your Google account.</li>
+    <li>Request only the <code>drive.file</code> permission scope — this lets the App see
+    and manage <em>only the files it creates</em> in your Drive. It cannot see, read, or
+    modify any other file already in your Google Drive.</li>
+    <li>Upload a PDF copy of your documents into a single "Lavati Scanner" folder it
+    creates in your own Drive. Nothing is sent to us — the upload goes directly from your
+    device to your Google account.</li>
+  </ul>
+  <p>You can turn this off, or revoke the App's Drive access entirely, at any time from
+  Settings in the App or from your
+  <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener">Google Account permissions page</a>.
+  Turning it off does not delete files already uploaded to Drive — those are managed like
+  any other file in your Drive.</p>
+
+  <h2>4. What we don't do</h2>
+  <ul>
+    <li>No ads or ad SDKs.</li>
+    <li>No analytics or tracking SDKs.</li>
+    <li>We don't sell, rent, or share your content or personal data with third parties.</li>
+    <li>We don't have a server that stores or has access to your scans.</li>
+  </ul>
+
+  <h2>5. Data retention &amp; deletion</h2>
+  <p>Deleting a document in the App deletes it from your device immediately. If that
+  document was backed up to Drive, deleting it in the App also removes it from your Drive
+  folder. Uninstalling the App removes all of its locally stored data. Revoking Drive
+  access (section 3) stops any further uploads but does not retroactively delete files
+  already in your Drive.</p>
+
+  <h2>6. Children's privacy</h2>
+  <p>The App is not directed at children under 13, and we do not knowingly collect
+  personal information from children.</p>
+
+  <h2>7. Security</h2>
+  <p>Your scans are stored in the App's private, sandboxed storage area, which other apps
+  cannot access. Any data sent to Google's Drive API during an optional backup is sent
+  over an encrypted (HTTPS) connection using Google's own sign-in and authorization flow.</p>
+
+  <h2>8. Changes to this policy</h2>
+  <p>We may update this Privacy Policy from time to time. Material changes will update the
+  "Last updated" date above.</p>
+
+  <h2>9. Contact</h2>
+  <p class="muted">Questions about this policy can be directed to the developer contact
+  listed on the Lavati Scanner Play Store listing.</p>
+</div>
+</body>
+</html>

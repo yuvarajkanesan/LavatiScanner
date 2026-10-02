@@ -23,8 +23,10 @@ export default function TermsAndConditionsScreen() {
 
       <Section title="3. Your Content">
         You retain all rights to the documents, images, and text you create or import using the
-        App. The App does not claim ownership over your content, and — since everything is
-        processed and stored on-device — we never see it.
+        App. The App does not claim ownership over your content. Everything is processed and
+        stored on-device by default, and we never see it — including if you turn on the optional
+        Google Drive backup, which uploads directly from your device to your own Google account
+        (see the Privacy Policy for details).
       </Section>
 
       <Section title="4. Acceptable Use">

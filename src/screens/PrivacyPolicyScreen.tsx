@@ -12,16 +12,24 @@ export default function PrivacyPolicyScreen() {
 
       <Section title="On-Device Processing">
         Lavati Scanner is built to keep your documents on your device. Scanning, edge detection,
-        filters, OCR (text recognition), QR/barcode reading, and PDF generation all run locally —
-        none of it is sent to a server, because there is no server. We have no way to see your
-        documents.
+        filters, OCR (text recognition), QR/barcode reading, and PDF generation all run locally.
+        The app has no server of its own, and we never receive or see your documents.
       </Section>
 
       <Section title="What's Stored, and Where">
         Scanned pages are saved as JPG files in the app's private storage on your device.
         Document names, folders, and page order are kept in a local database, also on-device.
         None of this leaves your phone unless you explicitly share or export it (e.g. via the
-        share sheet, or by exporting a PDF).
+        share sheet, exporting a PDF), or turn on Google Drive backup below.
+      </Section>
+
+      <Section title="Optional Google Drive Backup">
+        If you turn on Drive backup in Settings, the app signs you in with your Google account
+        and requests only the "drive.file" permission — it can see and manage only the files it
+        creates, never your other files in Drive. It then uploads a PDF copy of your documents
+        straight from your device into a single "Lavati Scanner" folder in your own Drive;
+        nothing passes through us. Turn this off, or revoke access entirely, any time from
+        Settings or your Google Account's permissions page.
       </Section>
 
       <Section title="Vault PIN & Biometrics">
