@@ -43,7 +43,7 @@ export default function FilterScreen({navigation, route}: Props) {
   );
 
   const [selectedFilter, setSelectedFilter] = useState<FilterType>(
-    page?.filter ?? 'auto',
+    page?.filter ?? 'magicColor',
   );
   const [busy, setBusy] = useState<'add' | 'done' | 'rotate' | null>(null);
 

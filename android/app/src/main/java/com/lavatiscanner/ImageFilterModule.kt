@@ -343,9 +343,17 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         sharpenARGB(saturated, w, h, 0.6f)
       }
       "grayscale" -> {
+        // CLAHE alone only redistributes *local* contrast - on an evenly
+        // lit subject (little tonal variation within each tile) that isn't
+        // enough, and the result stays flat/muddy with no real blacks or
+        // whites (confirmed on-device: looked washed out next to a
+        // reference scanner app's punchier grayscale). normalizeGray is a
+        // min-max auto-levels stretch - it expands whatever range the image
+        // actually has out to the full 0-255 span, the same fix already
+        // applied to "shadowRemoval" below.
         val gray = toGray(pixels)
         val claheGray = clahe(gray, w, h, 8, 8, 2.5)
-        sharpenARGB(grayToARGB(claheGray), w, h, 0.55f)
+        sharpenARGB(grayToARGB(normalizeGray(claheGray)), w, h, 0.55f)
       }
       "bw" -> {
         // Clean, print-ready monochrome. The previous version was a hard
@@ -376,16 +384,17 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         sharpenARGB(brightnessBoost(divided, 14), w, h, 0.5f)
       }
       "magicColor" -> {
-        // Punchy, saturated auto-color look (paper/background normalized the
-        // same way as "enhanced", then pushed harder on saturation+contrast
-        // instead of local-contrast/CLAHE) - distinct from "enhanced"'s more
-        // subdued, text-focused clarity boost.
-        val r0 = divideByBackground(extractChannel(pixels, 16), w, h, bgRadius)
-        val g0 = divideByBackground(extractChannel(pixels, 8), w, h, bgRadius)
-        val b0 = divideByBackground(extractChannel(pixels, 0), w, h, bgRadius)
-        val divided = combineRGB(r0, g0, b0)
-        val vivid = boostSaturation(contrastBoost(divided, 1.1f), 1.35f)
-        sharpenARGB(brightnessBoost(vivid, 6), w, h, 0.6f)
+        // Punchy, saturated color pop - deliberately NOT background/shadow
+        // normalization (that's "enhanced"/"auto"/"lighten"'s job). This
+        // used divideByBackground here too at first, but that technique
+        // maps any pixel brighter than its own local neighborhood average
+        // to white (by design, for paper/ink separation) - on a subject
+        // that's already bright and textured throughout (confirmed
+        // on-device: a light-colored keyboard) roughly half the image
+        // qualifies and the whole photo blows out to near-solid white.
+        // Working directly off the original exposure avoids that entirely.
+        val vivid = boostSaturation(contrastBoost(pixels, 1.12f), 1.4f)
+        sharpenARGB(vivid, w, h, 0.6f)
       }
       "shadowRemoval" -> {
         val gray = toGray(pixels)

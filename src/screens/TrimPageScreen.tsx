@@ -225,7 +225,7 @@ export default function TrimPageScreen({navigation, route}: Props) {
       } else {
         // Freshly captured pages default to "Auto" instead of the
         // untouched photo.
-        const pageId = session.addPage(`file://${warpedPath}`, 'auto');
+        const pageId = session.addPage(`file://${warpedPath}`, 'magicColor');
         navigation.replace('Filter', {pageId});
       }
     } catch (error) {
