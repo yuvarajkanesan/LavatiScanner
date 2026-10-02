@@ -2,6 +2,7 @@ export type FilterType =
   | 'original'
   | 'auto'
   | 'enhanced'
+  | 'magicColor'
   | 'grayscale'
   | 'bw'
   | 'lighten'

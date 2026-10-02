@@ -15,13 +15,14 @@ export interface FilterOption {
  */
 export const FILTER_OPTIONS: FilterOption[] = [
   {id: 'original', label: 'Original'},
-  {id: 'auto', label: 'Auto'},
+  {id: 'shadowRemoval', label: 'No Shadow'},
+  {id: 'lighten', label: 'Lighten'},
+  {id: 'magicColor', label: 'Magic Color'},
   {id: 'grayscale', label: 'Grayscale'},
+  {id: 'auto', label: 'Auto'},
   {id: 'sharpen', label: 'Sharpen'},
   {id: 'enhanced', label: 'Enhanced'},
   {id: 'bw', label: 'B&W'},
-  {id: 'lighten', label: 'Lighten'},
-  {id: 'shadowRemoval', label: 'Shadow Removal'},
   {id: 'eco', label: 'Eco'},
   {id: 'invert', label: 'Night'},
 ];

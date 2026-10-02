@@ -272,7 +272,7 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
    * `sharpen` (the same Laplacian unsharp mask as the color-matrix path)
    * somewhere in its chain — text/image crispness must never regress just
    * because a filter now does more than a linear tone adjustment. The
-   * binary filters (bw/lighten/eco) sharpen the grayscale channel *before*
+   * binary filters (bw/eco) sharpen the grayscale channel *before*
    * thresholding specifically: thresholding snaps already-soft JPEG pixels
    * at a letter's edge toward one extreme, eroding thin strokes, exactly
    * the failure mode the old color-matrix "bw" filter's sharpen-first
@@ -354,14 +354,27 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         grayToARGB(out)
       }
       "lighten" -> {
-        val gray = sharpenGray(toGray(pixels), w, h, 0.35f)
-        val divided = divideByBackground(gray, w, h, bgRadius)
-        val threshold = otsuThreshold(divided)
-        val out = IntArray(divided.size)
-        for (i in divided.indices) {
-          out[i] = if (divided[i] > threshold) 255 else 0
-        }
-        grayToARGB(out)
+        // A true brightness lift in color (paper brightened, shadows/tint
+        // normalized via per-channel divideByBackground) - NOT a B&W
+        // threshold despite the name's similarity to "bw"/"eco" below, which
+        // already cover that case.
+        val r0 = divideByBackground(extractChannel(pixels, 16), w, h, bgRadius)
+        val g0 = divideByBackground(extractChannel(pixels, 8), w, h, bgRadius)
+        val b0 = divideByBackground(extractChannel(pixels, 0), w, h, bgRadius)
+        val divided = combineRGB(r0, g0, b0)
+        sharpenARGB(brightnessBoost(divided, 14), w, h, 0.5f)
+      }
+      "magicColor" -> {
+        // Punchy, saturated auto-color look (paper/background normalized the
+        // same way as "enhanced", then pushed harder on saturation+contrast
+        // instead of local-contrast/CLAHE) - distinct from "enhanced"'s more
+        // subdued, text-focused clarity boost.
+        val r0 = divideByBackground(extractChannel(pixels, 16), w, h, bgRadius)
+        val g0 = divideByBackground(extractChannel(pixels, 8), w, h, bgRadius)
+        val b0 = divideByBackground(extractChannel(pixels, 0), w, h, bgRadius)
+        val divided = combineRGB(r0, g0, b0)
+        val vivid = boostSaturation(contrastBoost(divided, 1.1f), 1.35f)
+        sharpenARGB(brightnessBoost(vivid, 6), w, h, 0.6f)
       }
       "shadowRemoval" -> {
         val gray = toGray(pixels)
