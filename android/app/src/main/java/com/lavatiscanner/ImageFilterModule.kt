@@ -288,30 +288,36 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
 
     return when (filterId) {
       "auto" -> {
-        // The "clarity" look of a good scanner app (crisp text, punchy
-        // local contrast) comes from local-contrast enhancement (CLAHE),
-        // not from a flat global contrast/brightness lift. divideByBackground
-        // (a *global* paper-tone normalization) was tried here before and
-        // blew out non-paper test shots with a color cast, so this uses the
-        // same clamped CLAHE-ratio technique as "enhanced" instead - safer,
-        // because it only redistributes local contrast rather than
-        // rescaling the whole image against an assumed uniform background -
-        // at a lower clip limit so it stays a step below "enhanced" rather
-        // than duplicating it, plus the same brightness/sharpen as before.
-        val luma = toGray(pixels)
-        val claheLuma = clahe(luma, w, h, 8, 8, 2.0)
+        // A document scanner's default filter has one real job: get rid of
+        // the shading/shadow a photographed page picks up from uneven room
+        // lighting, and leave a clean, print-ready result. The previous
+        // version only added *local* contrast (CLAHE) on top of the raw
+        // photo - it never actually removed the shadow gradient, so a dark
+        // corner just got more texture instead of turning white, which is
+        // what read as "damaging"/unprofessional. This now runs the same
+        // per-channel divideByBackground paper-normalization as
+        // "enhanced"/"lighten" first (that's the step that removes shadows),
+        // then a gentle CLAHE clarity pass and a modest sharpen - tuned
+        // noticeably safer than "enhanced" (lower clip limit, no saturation
+        // push) so it stays the safe, clean default rather than a stylized
+        // look.
+        val r0 = divideByBackground(extractChannel(pixels, 16), w, h, bgRadius)
+        val g0 = divideByBackground(extractChannel(pixels, 8), w, h, bgRadius)
+        val b0 = divideByBackground(extractChannel(pixels, 0), w, h, bgRadius)
+        val divided = combineRGB(r0, g0, b0)
+        val luma = toGray(divided)
+        val claheLuma = clahe(luma, w, h, 8, 8, 1.5)
         val clarified = IntArray(pixels.size)
         for (i in pixels.indices) {
           val l0 = max(1, luma[i])
-          val ratio = (claheLuma[i].toFloat() / l0).coerceIn(0.4f, 2.2f)
-          val p = pixels[i]
+          val ratio = (claheLuma[i].toFloat() / l0).coerceIn(0.7f, 1.5f)
+          val p = divided[i]
           val r = (((p shr 16) and 0xFF) * ratio).toInt().coerceIn(0, 255)
           val g = (((p shr 8) and 0xFF) * ratio).toInt().coerceIn(0, 255)
           val b = ((p and 0xFF) * ratio).toInt().coerceIn(0, 255)
           clarified[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
         }
-        val out = brightnessBoost(contrastBoost(clarified, 1.05f), 10)
-        sharpenARGB(out, w, h, 0.7f)
+        sharpenARGB(contrastBoost(clarified, 1.08f), w, h, 0.5f)
       }
       "enhanced" -> {
         val r0 = divideByBackground(extractChannel(pixels, 16), w, h, bgRadius)
@@ -342,16 +348,21 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         sharpenARGB(grayToARGB(claheGray), w, h, 0.55f)
       }
       "bw" -> {
-        val gray = sharpenGray(toGray(pixels), w, h, 0.4f)
-        val localMean = boxBlur(gray, w, h, localMeanRadius)
-        val out = IntArray(gray.size)
-        // A pixel needs to be darker than this much below its local mean to
-        // be marked black - a bigger (more negative) margin means fewer
-        // borderline pixels end up black, i.e. a visibly brighter page.
-        for (i in gray.indices) {
-          out[i] = if (gray[i] < localMean[i] - 24) 0 else 255
-        }
-        grayToARGB(out)
+        // Clean, print-ready monochrome. The previous version was a hard
+        // black/white threshold with no shadow removal - a photographed
+        // page's shading survived as a dark blotch *around* the threshold
+        // line instead of being removed, and continuous-tone content (a
+        // photo, a logo) collapsed into solid black/white blobs, which is
+        // what read as damaged/unprofessional. This instead removes the
+        // shadow gradient first (the same per-channel divideByBackground
+        // used by "enhanced"/"lighten"/"auto"), then applies a straight
+        // contrast boost - continuous tone throughout, so it still prints
+        // clean (white background, crisp dark text) without the fax look.
+        // "eco" below keeps the true binary threshold for ink-saving print.
+        val gray = toGray(pixels)
+        val divided = divideByBackground(gray, w, h, bgRadius)
+        val contrasted = contrastBoost(grayToARGB(divided), 1.18f)
+        sharpenARGB(contrasted, w, h, 0.55f)
       }
       "lighten" -> {
         // A true brightness lift in color (paper brightened, shadows/tint
