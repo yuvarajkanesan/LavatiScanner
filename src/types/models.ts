@@ -1,15 +1,4 @@
-export type FilterType =
-  | 'original'
-  | 'auto'
-  | 'enhanced'
-  | 'magicColor'
-  | 'grayscale'
-  | 'bw'
-  | 'lighten'
-  | 'shadowRemoval'
-  | 'eco'
-  | 'sharpen'
-  | 'invert';
+export type FilterType = 'original' | 'lighten' | 'magicColor' | 'grayscale';
 
 /** A single OCR'd line of text and its position, as 0..1 ratios of the page
  * image's own width/height (top-left origin) — JSON-serialized into

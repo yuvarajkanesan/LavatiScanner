@@ -21,6 +21,16 @@ react {
     //   skip the bundling of the JS bundle and the assets. By default is just 'debug'.
     //   If you add flavors like lite, prod, etc. you'll have to list your debuggableVariants.
     // debuggableVariants = ["liteDebug", "prodDebug"]
+    //
+    //   Empty on purpose: the QA debug build is handed to a tester over a
+    //   home WiFi network (no stable USB connection), where the live Metro
+    //   connection this list's default would otherwise require (the "debug"
+    //   variant skipping JS bundling and streaming from the dev server
+    //   instead) keeps dropping - adb's wireless pairing/port-forward isn't
+    //   reliable enough for that. Bundling the JS into the APK at build time
+    //   instead (same as a release build does) makes the QA build fully
+    //   standalone - install once, no dev server required.
+    debuggableVariants = []
 
     /* Bundling */
     //   A list containing the node command and its flags. Default is just 'node'.

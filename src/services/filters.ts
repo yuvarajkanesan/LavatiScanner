@@ -14,15 +14,8 @@ export interface FilterOption {
  * filmstrip's id + label metadata.
  */
 export const FILTER_OPTIONS: FilterOption[] = [
-  {id: 'magicColor', label: 'Magic Color'},
-  {id: 'bw', label: 'B&W'},
   {id: 'original', label: 'Original'},
-  {id: 'shadowRemoval', label: 'No Shadow'},
   {id: 'lighten', label: 'Lighten'},
+  {id: 'magicColor', label: 'Magic Color'},
   {id: 'grayscale', label: 'Grayscale'},
-  {id: 'auto', label: 'Auto'},
-  {id: 'sharpen', label: 'Sharpen'},
-  {id: 'enhanced', label: 'Enhanced'},
-  {id: 'eco', label: 'Eco'},
-  {id: 'invert', label: 'Night'},
 ];

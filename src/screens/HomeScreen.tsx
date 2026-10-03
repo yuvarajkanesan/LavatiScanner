@@ -820,7 +820,7 @@ export default function HomeScreen({navigation}: Props) {
           </View>
           <Text style={styles.emptyTitle}>No documents yet</Text>
           <Text style={styles.emptySubtitle}>
-            Tap the camera button to scan your first document.
+            Tap Smart Scan below to scan your first document.
           </Text>
         </View>
       ) : filteredDocuments.length === 0 ? (
@@ -1253,9 +1253,6 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       justifyContent: 'center',
       paddingHorizontal: 32,
-      // Extra right clearance so centered text doesn't run under the
-      // stacked gallery/camera FABs docked at the bottom-right.
-      paddingRight: 110,
     },
     emptyIconWrap: {
       width: 76,
