@@ -35,6 +35,7 @@ import {getThumbnail} from '../services/nativeImageFilter';
 import {isGoogleDriveSignedIn} from '../services/googleDrive';
 import {mapWithConcurrency} from '../utils/concurrency';
 import {scanTimestampName} from '../utils/format';
+import {useResponsive} from '../utils/responsive';
 import {DocumentSummary, Folder} from '../types/models';
 
 type FolderRow = Folder & {docCount: number};
@@ -112,6 +113,7 @@ export default function FoldersScreen({navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
+  const {contentMaxWidth} = useResponsive();
   const [folders, setFolders] = useState<FolderRow[]>([]);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -606,6 +608,7 @@ export default function FoldersScreen({navigation}: Props) {
 
   return (
     <View style={styles.container}>
+      <View style={[styles.centeredContent, {maxWidth: contentMaxWidth}]}>
       {selectionMode ? (
         <View style={styles.selectionBar}>
           <TouchableOpacity onPress={exitSelectionMode}>
@@ -775,6 +778,7 @@ export default function FoldersScreen({navigation}: Props) {
           />
         )}
       </View>
+      </View>
 
       {selectionMode && (
         <View style={[styles.bulkBar, {paddingBottom: 10 + insets.bottom}]}>
@@ -911,6 +915,14 @@ const createStyles = (colors: AppColors) =>
     container: {
       flex: 1,
       backgroundColor: colors.background,
+    },
+    // Caps the title/search/list column at a readable width and centers it
+    // on large tablets - full edge-to-edge rows there left a wide dead gap
+    // between the folder/document icon and the chevron on the far right.
+    centeredContent: {
+      flex: 1,
+      width: '100%',
+      alignSelf: 'center',
     },
     searchRow: {
       flexDirection: 'row',

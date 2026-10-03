@@ -23,7 +23,8 @@ type Props = NativeStackScreenProps<RootStackParamList, 'BookScan'>;
 
 export default function BookScanScreen({navigation, route}: Props) {
   const insets = useSafeAreaInsets();
-  const SCREEN_WIDTH = useWindowDimensions().width - 32;
+  const window = useWindowDimensions();
+  const SCREEN_WIDTH = window.width - 32;
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<{
     width: number;
@@ -116,8 +117,19 @@ export default function BookScanScreen({navigation, route}: Props) {
     }
   }
 
+  // Width-only fit (no cap against available vertical space) could overflow
+  // previewWrap and visually collide with the header/action bar - most
+  // likely on a tablet's much wider screen, or in a short multi-window pane
+  // - since RN doesn't clip a flex child's overflow by default. `maxHeight`
+  // below bounds the box on both axes; `resizeMode="contain"` then fits the
+  // image within whichever constraint is tighter, same effect as the
+  // Math.min(maxW/w, maxH/h) scale math CropPageScreen/TrimPageScreen use.
+  const maxPreviewHeight = window.height - insets.top - insets.bottom - 170;
   const displayHeight = imageSize
-    ? (SCREEN_WIDTH * imageSize.height) / imageSize.width
+    ? Math.min(
+        (SCREEN_WIDTH * imageSize.height) / imageSize.width,
+        maxPreviewHeight,
+      )
     : 0;
 
   return (

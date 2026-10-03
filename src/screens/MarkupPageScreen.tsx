@@ -54,6 +54,44 @@ const COLORS = ['#EF4444', '#F59E0B', '#22C55E', '#3B82F6', '#111111'];
 const STROKE_WIDTH = 4;
 const MIN_SHAPE_SIZE = 3;
 
+/** Rescales a pen stroke's SVG path - built only from `M{x},{y}` /
+ * `L{x},{y}` commands (see `panResponder` below), so a regex over those two
+ * command letters is enough, no general SVG path parser needed. */
+function rescalePathD(d: string, scaleX: number, scaleY: number): string {
+  return d.replace(
+    /([ML])(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g,
+    (_match, cmd: string, x: string, y: string) =>
+      `${cmd}${(parseFloat(x) * scaleX).toFixed(1)},${(parseFloat(y) * scaleY).toFixed(1)}`,
+  );
+}
+
+/** Remaps a shape from one display-pixel space to another - used when the
+ * window resizes (split-screen/foldable) after shapes were already drawn,
+ * so already-drawn artwork stays visually anchored to the image instead of
+ * going stale/misaligned relative to the newly re-fitted canvas. */
+function rescaleShape(shape: Shape, scaleX: number, scaleY: number): Shape {
+  switch (shape.type) {
+    case 'path':
+      return {...shape, d: rescalePathD(shape.d, scaleX, scaleY)};
+    case 'rect':
+      return {
+        ...shape,
+        x: shape.x * scaleX,
+        y: shape.y * scaleY,
+        width: shape.width * scaleX,
+        height: shape.height * scaleY,
+      };
+    case 'circle':
+      return {
+        ...shape,
+        cx: shape.cx * scaleX,
+        cy: shape.cy * scaleY,
+        rx: shape.rx * scaleX,
+        ry: shape.ry * scaleY,
+      };
+  }
+}
+
 const TOOLS: {key: Tool; icon: string; label: string}[] = [
   {key: 'pen', icon: 'gesture', label: 'Pen'},
   {key: 'rectangle', icon: 'crop-square', label: 'Rectangle'},
@@ -65,18 +103,20 @@ export default function MarkupPageScreen({navigation, route}: Props) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const {docId, pageId, filePath} = route.params;
-  // Read once at mount rather than a module-level Dimensions.get() snapshot
-  // (which could be stale from whatever orientation was active when the JS
-  // bundle first loaded) — but not kept reactive to later rotation, since
-  // already-drawn shapes are stored in this screen's display-pixel space and
-  // resizing display out from under them would misalign the artwork.
-  const {width: initialScreenWidth, height: initialScreenHeight} =
-    useWindowDimensions();
+  // Reactive (not a one-off Dimensions.get() snapshot) so a resize while
+  // this screen is open - split-screen/foldable fold, not just rotation
+  // (rotation itself is blocked by the app's portrait lock) - re-fits the
+  // canvas instead of leaving it stale relative to the new window size.
+  const {width: windowWidth, height: windowHeight} = useWindowDimensions();
 
   const [display, setDisplay] = useState<{
     width: number;
     height: number;
   } | null>(null);
+  // Mirrors `display` for synchronous reads inside the fit effect below -
+  // state itself only updates on the next render, too late to compute the
+  // old->new scale ratio within the same effect run.
+  const displayRef = useRef<{width: number; height: number} | null>(null);
   const [shapes, setShapes] = useState<Shape[]>([]);
   const [currentPath, setCurrentPath] = useState('');
   const [currentShape, setCurrentShape] = useState<
@@ -112,10 +152,20 @@ export default function MarkupPageScreen({navigation, route}: Props) {
     Image.getSize(
       `file://${filePath}`,
       (width, height) => {
-        const maxW = initialScreenWidth - 32;
-        const maxH = initialScreenHeight - 260 - insets.top - insets.bottom;
+        const maxW = windowWidth - 32;
+        const maxH = windowHeight - 260 - insets.top - insets.bottom;
         const scale = Math.min(maxW / width, maxH / height);
-        setDisplay({width: width * scale, height: height * scale});
+        const next = {width: width * scale, height: height * scale};
+        const prev = displayRef.current;
+        if (prev && prev.width > 0 && prev.height > 0) {
+          const scaleX = next.width / prev.width;
+          const scaleY = next.height / prev.height;
+          if (scaleX !== 1 || scaleY !== 1) {
+            setShapes(s => s.map(shape => rescaleShape(shape, scaleX, scaleY)));
+          }
+        }
+        displayRef.current = next;
+        setDisplay(next);
       },
       () => {
         Alert.alert('Could not open image', 'This page could not be loaded.');
@@ -123,7 +173,7 @@ export default function MarkupPageScreen({navigation, route}: Props) {
       },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filePath]);
+  }, [filePath, windowWidth, windowHeight]);
 
   const panResponder = useRef(
     PanResponder.create({
