@@ -230,3 +230,48 @@ export async function deleteFileFromDrive(fileId: string): Promise<void> {
   const accessToken = await getFreshAccessToken();
   await driveApiFetch(`/files/${fileId}`, accessToken, {method: 'DELETE'});
 }
+
+export interface DriveBackupFile {
+  id: string;
+  name: string;
+  modifiedTime: string;
+  size: number;
+}
+
+/** Lists every file backed up in this app's dedicated Drive folder (see
+ * `ensureAppFolderId`) - the Restore flow's source of "what's available to
+ * pull back down". */
+export async function listDriveBackups(): Promise<DriveBackupFile[]> {
+  const accessToken = await getFreshAccessToken();
+  const folderId = await ensureAppFolderId(accessToken);
+  const query = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+  const res = await driveApiFetch(
+    `/files?q=${query}&spaces=drive&fields=files(id,name,modifiedTime,size)&orderBy=name`,
+    accessToken,
+  );
+  const json = await res.json();
+  const files: {id: string; name: string; modifiedTime: string; size?: string}[] =
+    json?.files ?? [];
+  return files.map(f => ({
+    id: f.id,
+    name: f.name,
+    modifiedTime: f.modifiedTime,
+    size: Number(f.size ?? 0),
+  }));
+}
+
+/** Downloads a Drive file's raw bytes straight to `destPath` on disk. */
+export async function downloadFileFromDrive(
+  fileId: string,
+  destPath: string,
+): Promise<void> {
+  const accessToken = await getFreshAccessToken();
+  const result = await RNFS.downloadFile({
+    fromUrl: `${DRIVE_API}/files/${fileId}?alt=media`,
+    toFile: destPath,
+    headers: {Authorization: `Bearer ${accessToken}`},
+  }).promise;
+  if (result.statusCode < 200 || result.statusCode >= 300) {
+    throw new Error(`Drive download failed with status ${result.statusCode}`);
+  }
+}

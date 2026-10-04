@@ -300,6 +300,27 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         val gray = toGray(pixels)
         sharpenARGB(grayToARGB(normalizeGray(gray)), w, h, 0.5f)
       }
+      "warm" -> {
+        // Warm color-balance shift (more red/yellow, less blue) + a mild
+        // contrast lift - useful for scans taken under cool/fluorescent
+        // lighting.
+        sharpenARGB(colorBalance(contrastBoost(pixels, 1.05f), 1.12f, 1.0f, 0.9f), w, h, 0.55f)
+      }
+      "cool" -> {
+        // Same idea, opposite direction (more blue, less red) - a crisp,
+        // cool-toned look.
+        sharpenARGB(colorBalance(contrastBoost(pixels, 1.05f), 0.9f, 1.0f, 1.12f), w, h, 0.55f)
+      }
+      "bw" -> {
+        // Punchier, higher-contrast monochrome than "grayscale" - still
+        // continuous tone throughout (no binary threshold: an earlier
+        // version of this filter did that and collapsed any photo/logo
+        // content into solid black/white blobs, which is exactly the
+        // "damaged quality" this whole filter rewrite was about fixing).
+        val gray = toGray(pixels)
+        val leveled = normalizeGray(gray)
+        sharpenARGB(contrastBoost(grayToARGB(leveled), 1.25f), w, h, 0.55f)
+      }
       else -> pixels
     }
   }
@@ -358,6 +379,21 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
       val ng = (gray + (g - gray) * factor).toInt().coerceIn(0, 255)
       val nb = (gray + (b - gray) * factor).toInt().coerceIn(0, 255)
       out[i] = (0xFF shl 24) or (nr shl 16) or (ng shl 8) or nb
+    }
+    return out
+  }
+
+  /** Per-channel multiplier - a flat white-balance-style color shift (warm/
+   * cool tone). Same "global, bounded, same math everywhere" shape as every
+   * other filter here. */
+  private fun colorBalance(pixels: IntArray, rFactor: Float, gFactor: Float, bFactor: Float): IntArray {
+    val out = IntArray(pixels.size)
+    for (i in pixels.indices) {
+      val p = pixels[i]
+      val r = (((p shr 16) and 0xFF) * rFactor).toInt().coerceIn(0, 255)
+      val g = (((p shr 8) and 0xFF) * gFactor).toInt().coerceIn(0, 255)
+      val b = ((p and 0xFF) * bFactor).toInt().coerceIn(0, 255)
+      out[i] = (0xFF shl 24) or (r shl 16) or (g shl 8) or b
     }
     return out
   }

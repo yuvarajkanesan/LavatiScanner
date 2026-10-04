@@ -40,6 +40,8 @@ import {
 import {
   backupAllDocumentsToDrive,
   BackupProgress,
+  restoreAllFromDrive,
+  RestoreProgress,
 } from '../services/driveBackup';
 import {User as GoogleUser} from '@react-native-google-signin/google-signin';
 
@@ -74,6 +76,8 @@ export default function SettingsScreen({navigation}: Props) {
   const [driveConnectBusy, setDriveConnectBusy] = useState(false);
   const [backupBusy, setBackupBusy] = useState(false);
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [restoreStatus, setRestoreStatus] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setPinIsSet(await hasPin());
@@ -246,6 +250,47 @@ export default function SettingsScreen({navigation}: Props) {
     }
   }
 
+  async function handleRestoreFromDrive() {
+    if (!driveUser) {
+      Alert.alert('Connect Google Drive', 'Connect your account first.');
+      return;
+    }
+    setRestoreBusy(true);
+    setRestoreStatus('Checking Drive for backups...');
+    try {
+      const summary = await restoreAllFromDrive((progress: RestoreProgress) => {
+        setRestoreStatus(
+          `Restoring ${progress.current}/${progress.total}: ${progress.documentName}`,
+        );
+      });
+      const failedNote =
+        summary.failed > 0
+          ? `\n\n${summary.failed} failed:\n${summary.errors
+              .slice(0, 3)
+              .map(e => `- ${e.documentName}: ${e.error}`)
+              .join('\n')}`
+          : '';
+      const message =
+        summary.succeeded === 0 && summary.failed === 0
+          ? 'Everything in Drive is already on this device.'
+          : `${summary.succeeded} document${summary.succeeded === 1 ? '' : 's'} restored from Drive.` +
+            (summary.skipped > 0
+              ? ` (${summary.skipped} already on this device.)`
+              : '') +
+            failedNote;
+      Alert.alert('Restore complete', message);
+      load();
+    } catch (err) {
+      Alert.alert(
+        'Restore failed',
+        err instanceof Error ? err.message : 'Something went wrong.',
+      );
+    } finally {
+      setRestoreBusy(false);
+      setRestoreStatus(null);
+    }
+  }
+
   function handleClearCache() {
     Alert.alert(
       'Clear cache',
@@ -394,7 +439,15 @@ export default function SettingsScreen({navigation}: Props) {
               icon="cloud-upload"
               label={backupBusy ? backupStatus ?? 'Backing up...' : 'Back up now'}
               onPress={backupBusy ? undefined : handleBackupNow}
-              disabled={backupBusy}
+              disabled={backupBusy || restoreBusy}
+            />
+            <Row
+              icon="cloud-download"
+              label={
+                restoreBusy ? restoreStatus ?? 'Restoring...' : 'Restore from Drive'
+              }
+              onPress={restoreBusy ? undefined : handleRestoreFromDrive}
+              disabled={backupBusy || restoreBusy}
             />
             <Row
               icon="link-off"

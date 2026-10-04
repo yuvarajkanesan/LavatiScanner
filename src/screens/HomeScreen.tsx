@@ -43,6 +43,7 @@ import {getThumbnail} from '../services/nativeImageFilter';
 import {mapWithConcurrency} from '../utils/concurrency';
 import DocumentCard from '../components/DocumentCard';
 import DocumentListRow from '../components/DocumentListRow';
+import FirstLaunchTips, {hasSeenTips} from '../components/FirstLaunchTips';
 import FolderPickerModal from '../components/FolderPickerModal';
 import OptionSheet, {SheetOption} from '../components/OptionSheet';
 import ToolGrid, {ToolShortcut} from '../components/ToolGrid';
@@ -160,6 +161,15 @@ export default function HomeScreen({navigation}: Props) {
   const [importingTray, setImportingTray] = useState<
     'import' | 'images' | null
   >(null);
+  const [showTips, setShowTips] = useState(false);
+
+  useEffect(() => {
+    hasSeenTips().then(seen => {
+      if (!seen) {
+        setShowTips(true);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(VIEW_MODE_KEY).then(saved => {
@@ -1057,6 +1067,7 @@ export default function HomeScreen({navigation}: Props) {
         }}
         onClose={() => setMoreMenuDoc(null)}
       />
+      {showTips && <FirstLaunchTips onDone={() => setShowTips(false)} />}
     </ScreenBackground>
   );
 }
