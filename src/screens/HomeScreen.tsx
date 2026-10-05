@@ -29,7 +29,11 @@ import {
   renameDocument,
   searchDocumentsByText,
 } from '../db/database';
-import {copyPageFile, deleteDocumentFiles} from '../services/fileStorage';
+import {
+  copyPageFile,
+  deleteDocumentFiles,
+  getStorageUsageBytes,
+} from '../services/fileStorage';
 import {
   buildPdfFromImages,
   parsePageOcrBlocks,
@@ -49,9 +53,10 @@ import OptionSheet, {SheetOption} from '../components/OptionSheet';
 import ToolGrid, {ToolShortcut} from '../components/ToolGrid';
 import Icon from '../components/Icon';
 import ScreenBackground from '../components/ScreenBackground';
+import LinearGradient from 'react-native-linear-gradient';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
-import {scanTimestampName} from '../utils/format';
+import {formatBytes, scanTimestampName} from '../utils/format';
 import {promptForText} from '../utils/promptForText';
 import {percentWidth, useResponsive} from '../utils/responsive';
 
@@ -126,6 +131,15 @@ const SORT_OPTIONS: SheetOption[] = [
 
 const SORT_MODE_KEYS: SortMode[] = SORT_OPTIONS.map(o => o.key as SortMode);
 
+function greeting(): string {
+  const hour = new Date().getHours();
+  if (hour < 5) return 'Good night';
+  if (hour < 12) return 'Good morning';
+  if (hour < 17) return 'Good afternoon';
+  if (hour < 21) return 'Good evening';
+  return 'Good night';
+}
+
 export default function HomeScreen({navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -151,6 +165,7 @@ export default function HomeScreen({navigation}: Props) {
     new Set(),
   );
   const [driveConnected, setDriveConnected] = useState(false);
+  const [storageBytes, setStorageBytes] = useState(0);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [deletableFolderId, setDeletableFolderId] = useState<string | null>(
     null,
@@ -335,12 +350,14 @@ export default function HomeScreen({navigation}: Props) {
   }, []);
 
   const load = useCallback(async () => {
-    const [docs, folderList] = await Promise.all([
+    const [docs, folderList, usageBytes] = await Promise.all([
       listDocuments('all'),
       listFolders(),
+      getStorageUsageBytes(),
     ]);
     setDocuments(docs);
     setFolders(folderList);
+    setStorageBytes(usageBytes);
     setDriveConnected(isGoogleDriveSignedIn());
     setLoading(false);
     resolveThumbnails(docs);
@@ -786,6 +803,34 @@ export default function HomeScreen({navigation}: Props) {
             </TouchableOpacity>
           </View>
 
+          <LinearGradient
+            colors={colors.gradientSunset}
+            start={{x: 0, y: 0}}
+            end={{x: 1, y: 1}}
+            style={styles.heroCard}>
+            <Text style={styles.heroGreeting}>{greeting()}</Text>
+            <View style={styles.heroStatsRow}>
+              <View style={styles.heroStatChip}>
+                <Icon name="description" size={14} color={colors.white} />
+                <Text style={styles.heroStatText}>
+                  {documents.length} scan{documents.length === 1 ? '' : 's'}
+                </Text>
+              </View>
+              <View style={styles.heroStatChip}>
+                <Icon name="folder" size={14} color={colors.white} />
+                <Text style={styles.heroStatText}>
+                  {folders.length} folder{folders.length === 1 ? '' : 's'}
+                </Text>
+              </View>
+              <View style={styles.heroStatChip}>
+                <Icon name="sd-storage" size={14} color={colors.white} />
+                <Text style={styles.heroStatText}>
+                  {formatBytes(storageBytes)}
+                </Text>
+              </View>
+            </View>
+          </LinearGradient>
+
           <View style={styles.sectionRow}>
             <Text style={styles.sectionTitle}>
               My Scans{documents.length > 0 ? ` (${documents.length})` : ''}
@@ -1166,6 +1211,42 @@ const createStyles = (colors: AppColors) =>
       shadowOffset: {width: 0, height: 1},
       shadowOpacity: 0.06,
       shadowRadius: 3,
+    },
+    heroCard: {
+      marginHorizontal: 16,
+      marginTop: 16,
+      borderRadius: 20,
+      padding: 18,
+      elevation: 4,
+      shadowColor: colors.black,
+      shadowOffset: {width: 0, height: 3},
+      shadowOpacity: 0.15,
+      shadowRadius: 8,
+    },
+    heroGreeting: {
+      fontSize: 19,
+      fontWeight: '700',
+      color: colors.white,
+    },
+    heroStatsRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 14,
+    },
+    heroStatChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 12,
+      backgroundColor: 'rgba(255,255,255,0.22)',
+    },
+    heroStatText: {
+      fontSize: 12,
+      fontWeight: '600',
+      color: colors.white,
     },
     sectionRow: {
       flexDirection: 'row',
