@@ -350,17 +350,24 @@ export default function HomeScreen({navigation}: Props) {
   }, []);
 
   const load = useCallback(async () => {
-    const [docs, folderList, usageBytes] = await Promise.all([
+    const [docs, folderList] = await Promise.all([
       listDocuments('all'),
       listFolders(),
-      getStorageUsageBytes(),
     ]);
     setDocuments(docs);
     setFolders(folderList);
-    setStorageBytes(usageBytes);
     setDriveConnected(isGoogleDriveSignedIn());
     setLoading(false);
     resolveThumbnails(docs);
+    // Deliberately not awaited/in the Promise.all above - this walks every
+    // document folder on disk, which with a lot of documents was slow
+    // enough to visibly hold up the screen's main loading spinner on every
+    // single visit to Home. The storage figure is a secondary stat; letting
+    // it resolve in the background and update the hero card whenever it's
+    // ready keeps the actual document list fast and focus-reload snappy.
+    getStorageUsageBytes()
+      .then(setStorageBytes)
+      .catch(() => undefined);
   }, [resolveThumbnails]);
 
   useFocusEffect(

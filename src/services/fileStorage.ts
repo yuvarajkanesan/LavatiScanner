@@ -91,14 +91,21 @@ export async function deletePageFile(filePath: string): Promise<void> {
 export async function getStorageUsageBytes(): Promise<number> {
   const exists = await RNFS.exists(SCANS_ROOT);
   if (!exists) return 0;
-  let total = 0;
+  // One native readDir call per document folder, run concurrently rather
+  // than awaited one at a time in a loop - with many documents the serial
+  // version turned into a long chain of bridge round-trips (visible as the
+  // whole screen's loading spinner hanging), even though none of the actual
+  // disk I/O depends on any other folder's result.
   const docFolders = await RNFS.readDir(SCANS_ROOT);
-  for (const folder of docFolders) {
-    if (folder.isDirectory()) {
-      const files = await RNFS.readDir(folder.path);
-      total += files.reduce((sum, f) => sum + (f.size || 0), 0);
-    }
-  }
+  const perFolderTotals = await Promise.all(
+    docFolders
+      .filter(folder => folder.isDirectory())
+      .map(async folder => {
+        const files = await RNFS.readDir(folder.path);
+        return files.reduce((sum, f) => sum + (f.size || 0), 0);
+      }),
+  );
+  let total = perFolderTotals.reduce((sum, t) => sum + t, 0);
   const exportsExist = await RNFS.exists(EXPORTS_ROOT);
   if (exportsExist) {
     const exportFiles = await RNFS.readDir(EXPORTS_ROOT);
