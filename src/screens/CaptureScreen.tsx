@@ -128,6 +128,11 @@ export default function CaptureScreen({navigation, route}: Props) {
   // decided, so the sample/"Make it now" picker overlay should stay out of
   // the way and go straight to the live camera.
   const backCapture = route.params?.idCardBackCapture ?? null;
+  // Set when this screen was opened to retake just the front of an ID card
+  // whose back (if two-sided) was already captured - same "skip the sample
+  // overlay, go straight to the live camera" treatment as `backCapture`,
+  // just for the other side.
+  const frontRecapture = route.params?.idCardFrontRecapture ?? null;
 
   const [mode, setMode] = useState<CaptureMode>(route.params?.mode ?? 'docs');
   const [flash, setFlash] = useState<Flash>('auto');
@@ -140,10 +145,10 @@ export default function CaptureScreen({navigation, route}: Props) {
   const [isScreenActive, setIsScreenActive] = useState(false);
   const [isSteady, setIsSteady] = useState(false);
   const [introVisible, setIntroVisible] = useState(() =>
-    needsIntro(route.params?.mode ?? 'docs', !!backCapture),
+    needsIntro(route.params?.mode ?? 'docs', !!backCapture || !!frontRecapture),
   );
   const [idCardSubMode, setIdCardSubMode] = useState<IdCardSubMode>(
-    backCapture?.subMode ?? 'twoSided',
+    backCapture?.subMode ?? frontRecapture?.subMode ?? 'twoSided',
   );
   const [focusPoint, setFocusPoint] = useState<{
     x: number;
@@ -227,7 +232,7 @@ export default function CaptureScreen({navigation, route}: Props) {
   // overlay for modes that need one — dismissing it only applies to the
   // current visit to that mode.
   useEffect(() => {
-    setIntroVisible(needsIntro(mode, !!backCapture));
+    setIntroVisible(needsIntro(mode, !!backCapture || !!frontRecapture));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
@@ -294,6 +299,13 @@ export default function CaptureScreen({navigation, route}: Props) {
             capturedUri: backCapture.frontUri,
             subMode: backCapture.subMode,
             backCapturedUri: path,
+          });
+        } else if (frontRecapture) {
+          navigation.replace('IdCardScan', {
+            folderId,
+            capturedUri: path,
+            subMode: frontRecapture.subMode,
+            backCapturedUri: frontRecapture.backUri ?? undefined,
           });
         } else {
           navigation.replace('IdCardScan', {
@@ -678,6 +690,8 @@ export default function CaptureScreen({navigation, route}: Props) {
             ]}>
             {backCapture
               ? 'ID Card · Back Side'
+              : frontRecapture
+              ? 'ID Card · Front Side'
               : session.autoCaptureEnabled
               ? isSteady
                 ? 'Steady — capturing…'
@@ -699,7 +713,7 @@ export default function CaptureScreen({navigation, route}: Props) {
         )}
       </View>
 
-      {!backCapture && (
+      {!backCapture && !frontRecapture && (
         <View style={[styles.modeBar, {paddingBottom: 6}]}>
           {MODES.map(m => {
             const active = m.key === mode;

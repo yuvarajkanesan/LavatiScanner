@@ -2,6 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {
   ActivityIndicator,
   Image,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -17,6 +18,7 @@ import {persistPageImage} from '../services/fileStorage';
 import {cropImageFile} from '../services/pdfExport';
 import {scanTimestampName} from '../utils/format';
 import Icon from '../components/Icon';
+import ImageCropEditor from '../components/ImageCropEditor';
 import {colors} from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'BookScan'>;
@@ -31,6 +33,7 @@ export default function BookScanScreen({navigation, route}: Props) {
     height: number;
   } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [cropping, setCropping] = useState(false);
 
   useEffect(() => {
     const capturedUri = route.params?.capturedUri;
@@ -67,6 +70,14 @@ export default function BookScanScreen({navigation, route}: Props) {
       folderId: route.params?.folderId ?? null,
       mode: 'book',
     });
+  }
+
+  // Nothing's saved as a document yet at this point, so cropping just
+  // re-measures and swaps the in-memory preview - same `loadImage` path the
+  // initial capture already goes through.
+  function handleCropApply(croppedUri: string) {
+    setCropping(false);
+    loadImage(`file://${croppedUri.replace('file://', '')}`);
   }
 
   async function handleSplitAndSave() {
@@ -139,9 +150,19 @@ export default function BookScanScreen({navigation, route}: Props) {
           <Icon name="close" size={24} color={colors.white} />
         </TouchableOpacity>
         <Text style={styles.title}>Book — Split Pages</Text>
-        <TouchableOpacity onPress={handleRetake} disabled={saving}>
-          <Icon name="replay" size={22} color={colors.white} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          {imageUri && (
+            <TouchableOpacity
+              onPress={() => setCropping(true)}
+              disabled={saving}
+              hitSlop={8}>
+              <Icon name="crop" size={22} color={colors.white} />
+            </TouchableOpacity>
+          )}
+          <TouchableOpacity onPress={handleRetake} disabled={saving}>
+            <Icon name="replay" size={22} color={colors.white} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {!imageUri || !imageSize ? (
@@ -178,6 +199,16 @@ export default function BookScanScreen({navigation, route}: Props) {
           </View>
         </>
       )}
+
+      {cropping && imageUri && (
+        <Modal visible animationType="slide" onRequestClose={() => setCropping(false)}>
+          <ImageCropEditor
+            filePath={imageUri}
+            onCancel={() => setCropping(false)}
+            onApply={handleCropApply}
+          />
+        </Modal>
+      )}
     </View>
   );
 }
@@ -194,6 +225,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingTop: 18,
     paddingBottom: 12,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 18,
   },
   title: {
     fontSize: 15,

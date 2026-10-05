@@ -1,13 +1,14 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Image,
+  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from 'react-native';
+import RNFS from 'react-native-fs';
 import Alert from '../utils/customAlert';
 import {captureRef} from 'react-native-view-shot';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -15,8 +16,14 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
 import {createDocument, addPage as addPageRecord} from '../db/database';
 import {persistPageImage} from '../services/fileStorage';
+import {bakeFilterToFile} from '../services/nativeImageFilter';
+import {FILTER_OPTIONS} from '../services/filters';
+import {FilterType} from '../types/models';
 import {scanTimestampName} from '../utils/format';
+import {generateId} from '../utils/ids';
 import Icon from '../components/Icon';
+import FilteredImage from '../components/FilteredImage';
+import ImageCropEditor from '../components/ImageCropEditor';
 import IdCardIllustration from '../components/IdCardIllustration';
 import {ID_CARD_SUB_MODES} from '../constants/idCardModes';
 import {colors} from '../theme/colors';
@@ -37,8 +44,13 @@ export default function IdCardScanScreen({navigation, route}: Props) {
   // straight to the review step instead of showing "Make it now" again.
   const frontUri = route.params?.capturedUri ?? null;
   const backUri = route.params?.backCapturedUri ?? null;
-  const step: Step = frontUri && backUri ? 'review' : 'select';
+  // Two-sided needs both shots before review; single/passport only ever
+  // captures the front, so it reaches review as soon as that one exists.
+  const hasAllShots = subMode === 'twoSided' ? !!(frontUri && backUri) : !!frontUri;
+  const step: Step = hasAllShots ? 'review' : 'select';
   const [saving, setSaving] = useState(false);
+  const [selectedFilter, setSelectedFilter] = useState<FilterType>('magicColor');
+  const [cropTarget, setCropTarget] = useState<'front' | 'back' | null>(null);
   const compositeRef = useRef<React.ComponentRef<typeof View>>(null);
 
   const activeMode = SUB_MODES.find(m => m.key === subMode)!;
@@ -57,6 +69,21 @@ export default function IdCardScanScreen({navigation, route}: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Neither side is a saved page yet at this point (nothing's written to the
+  // DB until "Make it now"), so cropping here just swaps which raw URI this
+  // screen's own route params point to - via `setParams`, the same way
+  // React Navigation always updates an already-mounted screen's params -
+  // rather than the DB-backed persist/replace `CropPageScreen` does for an
+  // already-saved page.
+  async function handleCropApply(croppedUri: string) {
+    if (cropTarget === 'front') {
+      navigation.setParams({capturedUri: croppedUri});
+    } else if (cropTarget === 'back') {
+      navigation.setParams({backCapturedUri: croppedUri});
+    }
+    setCropTarget(null);
+  }
+
   // The back side goes through the same live camera as the front, landing
   // back here via `backCapturedUri`.
   function goCaptureBack(uri: string) {
@@ -67,6 +94,17 @@ export default function IdCardScanScreen({navigation, route}: Props) {
     });
   }
 
+  // Retakes just the front - the reverse of `goCaptureBack`. `currentBackUri`
+  // (null for single/passport, where there is no back) is threaded through
+  // so a two-sided retake doesn't lose the already-captured back.
+  function goCaptureFront(currentBackUri: string | null) {
+    navigation.replace('Scan', {
+      folderId: route.params?.folderId ?? null,
+      mode: 'idcard',
+      idCardFrontRecapture: {subMode, backUri: currentBackUri},
+    });
+  }
+
   function handleMakeItNow() {
     if (!frontUri) {
       return;
@@ -74,11 +112,11 @@ export default function IdCardScanScreen({navigation, route}: Props) {
     if (subMode === 'twoSided') {
       goCaptureBack(frontUri);
     } else {
-      captureSingle();
+      handleSaveSingle();
     }
   }
 
-  async function captureSingle() {
+  async function handleSaveSingle() {
     if (!frontUri) {
       return;
     }
@@ -88,7 +126,15 @@ export default function IdCardScanScreen({navigation, route}: Props) {
         `${activeMode.docPrefix}_${scanTimestampName()}`,
         route.params?.folderId ?? null,
       );
-      const finalPath = await persistPageImage(doc.id, frontUri);
+      const bakedUri =
+        selectedFilter === 'original'
+          ? frontUri
+          : await bakeFilterToFile(
+              frontUri,
+              selectedFilter,
+              `${RNFS.CachesDirectoryPath}/idcard_${generateId()}.jpg`,
+            );
+      const finalPath = await persistPageImage(doc.id, bakedUri);
       await addPageRecord(doc.id, finalPath);
       navigation.replace('DocumentDetail', {docId: doc.id});
     } catch (error) {
@@ -188,38 +234,122 @@ export default function IdCardScanScreen({navigation, route}: Props) {
         </>
       )}
 
-      {step === 'review' && frontUri && backUri && (
+      {step === 'review' && frontUri && (
         <>
           <View style={styles.previewScroll}>
-            <View
-              style={styles.composite}
-              ref={compositeRef}
-              collapsable={false}>
-              <Image
-                source={{uri: `file://${frontUri.replace('file://', '')}`}}
-                style={styles.cardImage}
-                resizeMode="contain"
-              />
-              <Image
-                source={{uri: `file://${backUri.replace('file://', '')}`}}
-                style={styles.cardImage}
-                resizeMode="contain"
-              />
-            </View>
+            {subMode === 'twoSided' && backUri ? (
+              <View
+                style={styles.composite}
+                ref={compositeRef}
+                collapsable={false}>
+                <View style={styles.cardImageWrap}>
+                  <FilteredImage
+                    uri={frontUri}
+                    filter={selectedFilter}
+                    style={styles.cardImage}
+                  />
+                  <TouchableOpacity
+                    style={styles.cropIconBtn}
+                    onPress={() => setCropTarget('front')}
+                    hitSlop={6}>
+                    <Icon name="crop" size={16} color={colors.white} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.cardImageWrap}>
+                  <FilteredImage
+                    uri={backUri}
+                    filter={selectedFilter}
+                    style={styles.cardImage}
+                  />
+                  <TouchableOpacity
+                    style={styles.cropIconBtn}
+                    onPress={() => setCropTarget('back')}
+                    hitSlop={6}>
+                    <Icon name="crop" size={16} color={colors.white} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.singleComposite}>
+                <View style={styles.cardImageWrap}>
+                  <FilteredImage
+                    uri={frontUri}
+                    filter={selectedFilter}
+                    style={styles.cardImage}
+                  />
+                  <TouchableOpacity
+                    style={styles.cropIconBtn}
+                    onPress={() => setCropTarget('front')}
+                    hitSlop={6}>
+                    <Icon name="crop" size={16} color={colors.white} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
           </View>
 
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.filterRow}
+            contentContainerStyle={styles.filterRowContent}>
+            {FILTER_OPTIONS.map(option => {
+              const active = selectedFilter === option.id;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  style={[styles.filterChip, active && styles.filterChipActive]}
+                  onPress={() => setSelectedFilter(option.id)}>
+                  <FilteredImage
+                    uri={frontUri}
+                    filter={option.id}
+                    style={styles.filterThumb}
+                  />
+                  <View
+                    style={[
+                      styles.filterLabelBar,
+                      active && styles.filterLabelBarActive,
+                    ]}>
+                    <Text style={styles.filterLabel}>{option.label}</Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
           <View style={[styles.actionBar, {paddingBottom: 14 + insets.bottom}]}>
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              disabled={saving}
-              onPress={() => goCaptureBack(frontUri!)}>
-              <Icon name="replay" size={18} color={colors.white} />
-              <Text style={styles.secondaryButtonText}>Retake Back</Text>
-            </TouchableOpacity>
+            {subMode === 'twoSided' ? (
+              <>
+                <TouchableOpacity
+                  style={styles.secondaryButtonSmall}
+                  disabled={saving}
+                  onPress={() => goCaptureFront(backUri)}>
+                  <Icon name="replay" size={16} color={colors.white} />
+                  <Text style={styles.secondaryButtonText}>Front</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.secondaryButtonSmall}
+                  disabled={saving}
+                  onPress={() => goCaptureBack(frontUri!)}>
+                  <Icon name="replay" size={16} color={colors.white} />
+                  <Text style={styles.secondaryButtonText}>Back</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                disabled={saving}
+                onPress={() => goCaptureFront(null)}>
+                <Icon name="replay" size={18} color={colors.white} />
+                <Text style={styles.secondaryButtonText}>Retake</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity
               style={styles.primaryButtonInline}
               disabled={saving}
-              onPress={handleSaveComposite}>
+              onPress={
+                subMode === 'twoSided' ? handleSaveComposite : handleSaveSingle
+              }>
               {saving ? (
                 <ActivityIndicator color={colors.white} />
               ) : (
@@ -228,6 +358,17 @@ export default function IdCardScanScreen({navigation, route}: Props) {
             </TouchableOpacity>
           </View>
         </>
+      )}
+
+      {cropTarget && (
+        <Modal visible animationType="slide" onRequestClose={() => setCropTarget(null)}>
+          <ImageCropEditor
+            filePath={cropTarget === 'front' ? frontUri! : backUri!}
+            title={cropTarget === 'front' ? 'Crop Front' : 'Crop Back'}
+            onCancel={() => setCropTarget(null)}
+            onApply={handleCropApply}
+          />
+        </Modal>
       )}
     </View>
   );
@@ -347,11 +488,72 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 12,
   },
+  singleComposite: {
+    width: '100%',
+    backgroundColor: colors.white,
+    borderRadius: 8,
+    padding: 12,
+  },
   cardImage: {
     width: '100%',
     aspectRatio: 1.586,
     backgroundColor: colors.surface,
     borderRadius: 6,
+  },
+  cardImageWrap: {
+    position: 'relative',
+  },
+  cropIconBtn: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  filterRow: {
+    maxHeight: 108,
+    backgroundColor: '#111111',
+  },
+  filterRowContent: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  filterChip: {
+    width: 70,
+    height: 92,
+    borderRadius: 10,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  filterChipActive: {
+    borderColor: colors.accent,
+  },
+  filterThumb: {
+    width: '100%',
+    height: '100%',
+  },
+  filterLabelBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingVertical: 4,
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+  filterLabelBarActive: {
+    backgroundColor: colors.accent,
+  },
+  filterLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.white,
   },
   actionBar: {
     flexDirection: 'row',
@@ -366,6 +568,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
+    backgroundColor: '#262626',
+  },
+  secondaryButtonSmall: {
+    width: 90,
+    height: 46,
+    borderRadius: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
     backgroundColor: '#262626',
   },
   secondaryButtonText: {

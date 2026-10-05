@@ -22,6 +22,7 @@ export type RootStackParamList = {
         folderId?: string | null;
         mode?: CaptureMode;
         idCardBackCapture?: {frontUri: string; subMode: IdCardSubMode};
+        idCardFrontRecapture?: {subMode: IdCardSubMode; backUri?: string | null};
       }
     | undefined;
   Trim: {rawUri: string; pageId?: string};
