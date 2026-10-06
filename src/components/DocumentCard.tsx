@@ -10,7 +10,7 @@ import Icon from './Icon';
 import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { DocumentSummary } from '../types/models';
-import { formatBytes, formatDate, formatTime } from '../utils/format';
+import { formatBytes, formatDate } from '../utils/format';
 import { PercentWidth } from '../utils/responsive';
 import { isDocumentSynced } from '../services/driveBackup';
 
@@ -51,7 +51,6 @@ export default function DocumentCard({
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const accentColor = colors.funPalette[index % colors.funPalette.length];
   const synced = isDocumentSynced(document);
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
@@ -72,7 +71,7 @@ export default function DocumentCard({
       <View
         style={[
           styles.thumbnailWrap,
-          { borderColor: selected ? colors.accent : `${accentColor}55` },
+          { borderColor: selected ? colors.accent : colors.border },
           selected && styles.thumbnailWrapSelected,
         ]}>
         {document.thumbnailPath ? (
@@ -84,7 +83,7 @@ export default function DocumentCard({
         ) : (
           <View style={styles.thumbnailPlaceholder} />
         )}
-        <View style={[styles.pageBadge, { backgroundColor: accentColor }]}>
+        <View style={styles.pageBadge}>
           <Text style={styles.pageBadgeText}>{document.pageCount}</Text>
         </View>
         {selectionMode && (
@@ -111,8 +110,7 @@ export default function DocumentCard({
       </AppText>
       <Text style={styles.date} numberOfLines={1}>
         {document.pageCount} page{document.pageCount === 1 ? '' : 's'} ·{' '}
-        {formatDate(document.updatedAt)} · {formatTime(document.updatedAt)} ·{' '}
-        {formatBytes(document.totalSizeBytes)}
+        {formatDate(document.updatedAt)} · {formatBytes(document.totalSizeBytes)}
       </Text>
     </AnimatedPressable>
   );
@@ -127,7 +125,7 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     aspectRatio: 0.75,
     borderRadius: 20,
     backgroundColor: colors.surface,
-    borderWidth: 2,
+    borderWidth: 1,
     overflow: 'hidden',
     elevation: 3,
     shadowColor: colors.black,
@@ -136,7 +134,7 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     shadowRadius: 5,
   },
   thumbnailWrapSelected: {
-    borderWidth: 2.5,
+    borderWidth: 2,
   },
   thumbnail: {
     width: '100%',
@@ -153,6 +151,7 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     borderRadius: 10,
     paddingHorizontal: 7,
     paddingVertical: 2,
+    backgroundColor: colors.accent,
   },
   pageBadgeText: {
     color: colors.white,

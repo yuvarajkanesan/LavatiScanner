@@ -1,6 +1,12 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
-import {FlatList, RefreshControl, StyleSheet, Text, View} from 'react-native';
-import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {
+  FlatList,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import Alert from '../utils/customAlert';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Icon from '../components/Icon';
@@ -21,7 +27,6 @@ import {getThumbnail} from '../services/nativeImageFilter';
 import {mapWithConcurrency} from '../utils/concurrency';
 import DocumentCard from '../components/DocumentCard';
 import DocumentListRow from '../components/DocumentListRow';
-import Fab from '../components/Fab';
 import FolderPickerModal from '../components/FolderPickerModal';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
@@ -38,7 +43,6 @@ export default function FolderDetailScreen({navigation, route}: Props) {
   const styles = useMemo(() => createStyles(colors), [colors]);
   const {gridColumns} = useResponsive();
   const cardWidthPercent = percentWidth(100 / gridColumns - 3);
-  const insets = useSafeAreaInsets();
   const {folderId} = route.params;
   const [folder, setFolder] = useState<Folder | null>(null);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
@@ -159,6 +163,35 @@ export default function FolderDetailScreen({navigation, route}: Props) {
 
   return (
     <View style={styles.container}>
+      {documents.length > 0 && (
+        <View style={styles.countRow}>
+          <Text style={styles.countText}>
+            {documents.length} document{documents.length === 1 ? '' : 's'}
+          </Text>
+          <TouchableOpacity
+            onPress={toggleViewMode}
+            hitSlop={6}
+            style={styles.sectionIconBtn}>
+            <Icon
+              name={viewMode === 'grid' ? 'view-list-outline' : 'view-grid-outline'}
+              family="community"
+              size={20}
+              color={colors.text}
+            />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleNewScan}
+            hitSlop={6}
+            style={styles.sectionIconBtn}>
+            <Icon
+              name="camera-outline"
+              family="community"
+              size={20}
+              color={colors.text}
+            />
+          </TouchableOpacity>
+        </View>
+      )}
       {documents.length === 0 ? (
         <View style={styles.empty}>
           <View style={styles.emptyIconWrap}>
@@ -227,18 +260,6 @@ export default function FolderDetailScreen({navigation, route}: Props) {
           )}
         />
       )}
-      <Fab
-        onPress={toggleViewMode}
-        icon={viewMode === 'grid' ? 'view-list' : 'grid-view'}
-        variant="secondary"
-        size={46}
-        bottom={92 + insets.bottom}
-      />
-      <Fab
-        onPress={handleNewScan}
-        icon="photo-camera"
-        bottom={24 + insets.bottom}
-      />
 
       <FolderPickerModal
         visible={movingDoc !== null}
@@ -255,6 +276,30 @@ const createStyles = (colors: AppColors) =>
     container: {
       flex: 1,
       backgroundColor: colors.background,
+    },
+    countRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginHorizontal: 16,
+      marginTop: 16,
+      marginBottom: 6,
+    },
+    countText: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: '700',
+      color: colors.textMuted,
+    },
+    sectionIconBtn: {
+      width: 34,
+      height: 34,
+      borderRadius: 11,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: colors.surface,
+      borderWidth: 1,
+      borderColor: colors.border,
     },
     list: {
       padding: 16,

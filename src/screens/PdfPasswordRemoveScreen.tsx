@@ -48,7 +48,7 @@ export default function PdfPasswordRemoveScreen() {
       <View style={styles.iconWrap}>
         <Icon name="lock-open" size={40} color={colors.accent} />
       </View>
-      <Text style={styles.title}>Remove PDF Restrictions</Text>
+      <Text style={styles.title}>Remove PDF Password</Text>
       <Text style={styles.description}>
         Strips edit/print/copy locks from a PDF that opens without a password. This can't
         crack a PDF that requires a password just to open — that needs real decryption.

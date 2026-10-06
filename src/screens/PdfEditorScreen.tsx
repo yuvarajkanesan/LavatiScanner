@@ -8,7 +8,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import LinearGradient from 'react-native-linear-gradient';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import DraggableFlatList, {
@@ -31,7 +30,7 @@ import {renderAllPdfPages} from '../services/pdfThumbnail';
 import {saveSessionAsDocument} from '../services/scanPipeline';
 import {readFileBytes} from '../services/pdfBytes';
 import {promptForText} from '../utils/promptForText';
-import Icon, {IconFamily} from '../components/Icon';
+import Icon from '../components/Icon';
 import FeatureBadge from '../components/FeatureBadge';
 import Button from '../components/Button';
 import ScreenBackground from '../components/ScreenBackground';
@@ -413,24 +412,13 @@ export default function PdfEditorScreen({route, navigation}: Props) {
 
   return (
     <ScreenBackground>
-      <LinearGradient
-        colors={colors.gradientHero}
-        start={{x: 0, y: 0}}
-        end={{x: 1, y: 1}}
-        style={styles.hero}>
-        <FeatureBadge
-          icon="file-document-edit-outline"
-          color={colors.accent}
-          size={44}
-          variant="glow"
-        />
+      <View style={styles.hero}>
         <View style={styles.heroText}>
           <Text style={styles.fileNameHeader} numberOfLines={1}>
-            {fileName}
+            Edit PDF
           </Text>
-          <Text style={styles.subtitle}>
-            {pages.length} page{pages.length === 1 ? '' : 's'} · long-press a
-            page to drag & reorder
+          <Text style={styles.subtitle} numberOfLines={1}>
+            {fileName}
           </Text>
         </View>
         <TouchableOpacity
@@ -448,9 +436,20 @@ export default function PdfEditorScreen({route, navigation}: Props) {
           style={styles.resetBtn}
           onPress={handleReset}
           hitSlop={8}>
-          <Icon name="restore" size={20} color={colors.textMuted} />
+          <Icon name="restore" size={20} color={colors.white} />
         </TouchableOpacity>
-      </LinearGradient>
+      </View>
+      <View style={styles.reorderHint}>
+        <Icon
+          name="gesture-tap-hold"
+          family="community"
+          size={16}
+          color={colors.accent}
+        />
+        <Text style={styles.reorderHintText}>
+          Press and hold a page to reorder
+        </Text>
+      </View>
 
       <DraggableFlatList
         data={pages}
@@ -552,33 +551,69 @@ export default function PdfEditorScreen({route, navigation}: Props) {
       )}
 
       <View style={[styles.actionBar, {paddingBottom: 14 + insets.bottom}]}>
-        <EditorActionButton
-          icon="content-save-move-outline"
-          family="community"
-          color={colors.accent}
-          label="Save to Documents"
-          loading={busy === 'save'}
-          disabled={busy !== null || pages.length === 0}
+        <TouchableOpacity
+          style={styles.docEditBtn}
           onPress={handleSaveToDocuments}
-        />
-        <EditorActionButton
-          icon={f.sharePdf.icon}
-          family={f.sharePdf.family}
-          color={f.sharePdf.color}
-          label="Share PDF"
-          loading={busy === 'share'}
           disabled={busy !== null || pages.length === 0}
-          onPress={handleShare}
-        />
-        <EditorActionButton
-          icon={f.shareImage.icon}
-          family={f.shareImage.family}
-          color={f.shareImage.color}
-          label="Share Image"
-          loading={busy === 'shareImage'}
-          disabled={busy !== null || pages.length === 0}
-          onPress={handleShareImages}
-        />
+          activeOpacity={0.85}>
+          {busy === 'save' ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <>
+              <Icon
+                name="content-save-outline"
+                family="community"
+                size={18}
+                color={colors.white}
+              />
+              <Text style={styles.docEditBtnText}>Save to documents</Text>
+            </>
+          )}
+        </TouchableOpacity>
+        <View style={styles.docActionRow}>
+          <TouchableOpacity
+            style={[styles.docPill, {backgroundColor: `${colors.danger}1A`}]}
+            onPress={handleShare}
+            disabled={busy !== null || pages.length === 0}
+            activeOpacity={0.75}>
+            {busy === 'share' ? (
+              <ActivityIndicator color={colors.danger} size="small" />
+            ) : (
+              <>
+                <Icon
+                  name={f.sharePdf.icon}
+                  family={f.sharePdf.family}
+                  size={18}
+                  color={colors.danger}
+                />
+                <Text style={[styles.docPillText, {color: colors.danger}]}>
+                  Share PDF
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.docPill, {backgroundColor: `${colors.success}1A`}]}
+            onPress={handleShareImages}
+            disabled={busy !== null || pages.length === 0}
+            activeOpacity={0.75}>
+            {busy === 'shareImage' ? (
+              <ActivityIndicator color={colors.success} size="small" />
+            ) : (
+              <>
+                <Icon
+                  name={f.shareImage.icon}
+                  family={f.shareImage.family}
+                  size={18}
+                  color={colors.success}
+                />
+                <Text style={[styles.docPillText, {color: colors.success}]}>
+                  Share images
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <Modal
@@ -632,74 +667,6 @@ export default function PdfEditorScreen({route, navigation}: Props) {
   );
 }
 
-interface EditorActionButtonProps {
-  icon: string;
-  family?: IconFamily;
-  color: string;
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-  loading?: boolean;
-}
-
-function EditorActionButton({
-  icon,
-  family,
-  color,
-  label,
-  onPress,
-  disabled,
-  loading,
-}: EditorActionButtonProps) {
-  return (
-    <TouchableOpacity
-      style={[
-        editorActionStyles.btn,
-        {backgroundColor: `${color}14`},
-        disabled && editorActionStyles.btnDisabled,
-      ]}
-      onPress={onPress}
-      disabled={disabled}
-      activeOpacity={0.75}>
-      {loading ? (
-        <ActivityIndicator color={color} />
-      ) : (
-        <>
-          <FeatureBadge
-            icon={icon}
-            family={family}
-            color={color}
-            size={34}
-            variant="solid"
-          />
-          <Text style={[editorActionStyles.label, {color}]} numberOfLines={1}>
-            {label}
-          </Text>
-        </>
-      )}
-    </TouchableOpacity>
-  );
-}
-
-const editorActionStyles = StyleSheet.create({
-  btn: {
-    flex: 1,
-    height: 82,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-  },
-  btnDisabled: {
-    opacity: 0.5,
-  },
-  label: {
-    fontWeight: '700',
-    fontSize: 11,
-    textAlign: 'center',
-  },
-});
-
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
     center: {
@@ -730,24 +697,41 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
+      backgroundColor: colors.accent,
       paddingHorizontal: 18,
       paddingTop: 16,
-      paddingBottom: 14,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      paddingBottom: 18,
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
     },
     heroText: {
       flex: 1,
     },
     fileNameHeader: {
-      fontSize: 15,
+      fontSize: 19,
       fontWeight: '700',
-      color: colors.text,
+      color: colors.white,
     },
     subtitle: {
-      marginTop: 2,
+      marginTop: 4,
+      fontSize: 13,
+      color: 'rgba(255,255,255,0.8)',
+    },
+    reorderHint: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      marginHorizontal: 16,
+      marginTop: 14,
+      paddingVertical: 8,
+      borderRadius: 10,
+      backgroundColor: colors.accentMuted,
+    },
+    reorderHintText: {
       fontSize: 12,
-      color: colors.textMuted,
+      fontWeight: '600',
+      color: colors.accent,
     },
     resetBtn: {
       width: 36,
@@ -755,7 +739,7 @@ const createStyles = (colors: AppColors) =>
       borderRadius: 18,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.surface,
+      backgroundColor: 'rgba(255,255,255,0.16)',
     },
     addPagesBtn: {
       width: 36,
@@ -763,7 +747,7 @@ const createStyles = (colors: AppColors) =>
       borderRadius: 18,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.accent,
+      backgroundColor: 'rgba(255,255,255,0.16)',
       marginRight: 8,
     },
     list: {
@@ -850,11 +834,42 @@ const createStyles = (colors: AppColors) =>
       paddingBottom: 8,
     },
     actionBar: {
-      flexDirection: 'row',
       gap: 10,
       padding: 14,
       borderTopWidth: 1,
       borderTopColor: colors.border,
+      backgroundColor: colors.background,
+    },
+    docActionRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    docPill: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      height: 46,
+      borderRadius: 23,
+    },
+    docPillText: {
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    docEditBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      height: 50,
+      borderRadius: 25,
+      backgroundColor: colors.accent,
+    },
+    docEditBtnText: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.white,
     },
     previewBackdrop: {
       flex: 1,

@@ -1,29 +1,12 @@
 import React from 'react';
-import { StyleSheet, Text, TextProps } from 'react-native';
-import { useFontScale } from '../theme/FontScaleContext';
+import { Text, TextProps } from 'react-native';
 
 /**
- * Drop-in replacement for RN's `Text` that honors the user's Settings ->
- * Text Size preference. Screens still set `fontSize` (and optionally
- * `lineHeight`) in their own styles exactly as before - this just scales
- * whatever numbers it finds by the current font scale before handing them
- * to the real `Text`. Untouched if the style has no `fontSize` at all, so
- * it's a safe swap-in for any existing `<Text>` usage.
+ * Thin alias for RN's `Text`. The Settings -> Text Size preference is now
+ * applied globally (see `src/shims/react-native-font.tsx`), so this no
+ * longer needs to scale anything itself - kept as a stable import for its
+ * existing call sites.
  */
-export default function AppText({ style, ...props }: TextProps) {
-  const { fontScale } = useFontScale();
-  const flat = StyleSheet.flatten(style) || {};
-  const scaledStyle =
-    fontScale === 1 || typeof flat.fontSize !== 'number'
-      ? style
-      : [
-          style,
-          {
-            fontSize: flat.fontSize * fontScale,
-            ...(typeof flat.lineHeight === 'number'
-              ? { lineHeight: flat.lineHeight * fontScale }
-              : null),
-          },
-        ];
-  return <Text {...props} style={scaledStyle} />;
+export default function AppText(props: TextProps) {
+  return <Text {...props} />;
 }

@@ -38,16 +38,27 @@ export default function ToolGrid({
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors, compact), [colors, compact]);
   const {toolColumns} = useResponsive();
-  const cardWidthPercent = percentWidth(100 / (columns ?? toolColumns) - 3);
+  const cols = columns ?? toolColumns;
+  // Gap budget shared between the `cols - 1` gaps in a row. Cards get this
+  // as an explicit marginRight (omitted on the last column) instead of the
+  // container's `justifyContent: 'space-between'`, which spreads a short
+  // final row's items to the far edges and leaves a hole in the middle -
+  // exactly when the shortcut count isn't a multiple of `cols` (e.g. 5
+  // items in a 3-column grid).
+  const gapPercent = 3;
+  const cardWidthPercent = percentWidth(
+    (100 - gapPercent * (cols - 1)) / cols,
+  );
   return (
     <View style={styles.grid}>
-      {shortcuts.map(s => (
+      {shortcuts.map((s, index) => (
         <ToolCard
           key={s.key}
           shortcut={s}
           busy={busyKey === s.key}
           styles={styles}
           widthPercent={cardWidthPercent}
+          marginRight={(index + 1) % cols === 0 ? 0 : gapPercent}
           iconSize={compact ? 34 : 44}
         />
       ))}
@@ -62,12 +73,14 @@ function ToolCard({
   busy,
   styles,
   widthPercent,
+  marginRight,
   iconSize,
 }: {
   shortcut: ToolShortcut;
   busy: boolean;
   styles: ReturnType<typeof createStyles>;
   widthPercent: PercentWidth;
+  marginRight: number;
   iconSize: number;
 }) {
   const {colors} = useTheme();
@@ -77,7 +90,11 @@ function ToolCard({
 
   return (
     <AnimatedPressable
-      style={[styles.card, {width: widthPercent}, animatedStyle]}
+      style={[
+        styles.card,
+        {width: widthPercent, marginRight: `${marginRight}%`},
+        animatedStyle,
+      ]}
       onPress={shortcut.onPress}
       onPressIn={() => {
         scale.value = withSpring(0.95, {damping: 15, stiffness: 400});
@@ -93,7 +110,7 @@ function ToolCard({
         <FeatureBadge
           icon={token?.icon ?? shortcut.icon}
           family={token?.family}
-          color={token?.color ?? colors.accent}
+          color={colors.accent}
           size={iconSize}
           variant="soft"
         />
@@ -108,11 +125,9 @@ const createStyles = (colors: AppColors, compact?: boolean) =>
     grid: {
       flexDirection: 'row',
       flexWrap: 'wrap',
-      justifyContent: 'space-between',
       rowGap: compact ? 8 : 12,
     },
     card: {
-      width: '30%',
       alignItems: 'center',
       paddingVertical: compact ? 10 : 16,
       borderRadius: compact ? 14 : 16,

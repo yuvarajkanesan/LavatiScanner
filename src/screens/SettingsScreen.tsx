@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import {useFocusEffect} from '@react-navigation/native';
 import {TabScreenProps} from '../navigation/types';
@@ -64,6 +65,7 @@ export default function SettingsScreen({navigation}: Props) {
   const {colors, mode, setMode} = useTheme();
   const {fontScale, setFontScale} = useFontScale();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   const [pinIsSet, setPinIsSet] = useState(false);
   const [storageBytes, setStorageBytes] = useState(0);
   const [pinFlow, setPinFlow] = useState<PinFlow>(null);
@@ -321,6 +323,9 @@ export default function SettingsScreen({navigation}: Props) {
 
   return (
     <ScreenBackground>
+    <View style={[styles.heroHeader, {paddingTop: insets.top + 10}]}>
+      <Text style={styles.heroTitle}>Settings</Text>
+    </View>
     <ScrollView contentContainerStyle={styles.content}>
       <Section title="Appearance">
         <View style={styles.themeRow}>
@@ -369,7 +374,8 @@ export default function SettingsScreen({navigation}: Props) {
         </View>
       </Section>
 
-      <Section title="Text Size">
+      <Section title="Text size">
+        <View style={styles.fontSizeCard}>
         <View style={styles.fontSizeRow}>
           <Text style={styles.fontSizeSampleSmall}>A</Text>
           <View style={styles.fontSizeSliderWrap}>
@@ -386,28 +392,41 @@ export default function SettingsScreen({navigation}: Props) {
         <Text style={styles.fontSizePercent}>
           {Math.round(fontScale * 100)}%
         </Text>
-        <Text style={[styles.fontSizePreview, {fontSize: 15 * fontScale}]}>
+        <Text style={styles.fontSizePreview}>
           This is how your document names and buttons will look.
         </Text>
+        </View>
       </Section>
 
       <Section title="Security">
         {pinIsSet ? (
           <>
-            <Row icon="lock" label="Change PIN" onPress={beginChangePin} />
             <Row
-              icon="lock-open"
+              icon="lock-outline"
+              family="community"
+              label="Change PIN"
+              onPress={beginChangePin}
+            />
+            <Row
+              icon="lock-open-variant-outline"
+              family="community"
               label="Remove PIN"
               onPress={beginRemovePin}
               danger
             />
           </>
         ) : (
-          <Row icon="lock" label="Set vault PIN" onPress={beginSetPin} />
+          <Row
+            icon="lock-outline"
+            family="community"
+            label="Set vault PIN"
+            onPress={beginSetPin}
+          />
         )}
         {pinIsSet && biometryLabel && (
           <Row
             icon="fingerprint"
+            family="community"
             label={`Unlock with ${biometryLabel}`}
             toggle={{
               value: biometricEnabled,
@@ -420,12 +439,14 @@ export default function SettingsScreen({navigation}: Props) {
 
       <Section title="Storage">
         <Row
-          icon="sd-storage"
+          icon="database-outline"
+          family="community"
           label={`Used: ${formatBytes(storageBytes)}`}
           disabled
         />
         <Row
-          icon="delete-sweep"
+          icon="trash-can-outline"
+          family="community"
           label="Clear cache"
           onPress={handleClearCache}
         />
@@ -434,15 +455,22 @@ export default function SettingsScreen({navigation}: Props) {
       <Section title="Backup">
         {driveUser ? (
           <>
-            <Row icon="cloud-done" label={driveUser.user.email} disabled />
             <Row
-              icon="cloud-upload"
+              icon="cloud-check-outline"
+              family="community"
+              label={driveUser.user.email}
+              disabled
+            />
+            <Row
+              icon="cloud-upload-outline"
+              family="community"
               label={backupBusy ? backupStatus ?? 'Backing up...' : 'Back up now'}
               onPress={backupBusy ? undefined : handleBackupNow}
               disabled={backupBusy || restoreBusy}
             />
             <Row
-              icon="cloud-download"
+              icon="cloud-download-outline"
+              family="community"
               label={
                 restoreBusy ? restoreStatus ?? 'Restoring...' : 'Restore from Drive'
               }
@@ -450,7 +478,8 @@ export default function SettingsScreen({navigation}: Props) {
               disabled={backupBusy || restoreBusy}
             />
             <Row
-              icon="link-off"
+              icon="link-variant-off"
+              family="community"
               label="Disconnect Google Drive"
               onPress={handleDisconnectDrive}
               danger
@@ -458,7 +487,8 @@ export default function SettingsScreen({navigation}: Props) {
           </>
         ) : (
           <Row
-            icon="cloud"
+            icon="cloud-outline"
+            family="community"
             label={driveConnectBusy ? 'Connecting...' : 'Connect Google Drive'}
             onPress={driveConnectBusy ? undefined : handleConnectDrive}
             disabled={driveConnectBusy}
@@ -519,6 +549,7 @@ function Section({
 
 function Row({
   icon,
+  family,
   label,
   onPress,
   danger,
@@ -526,6 +557,7 @@ function Row({
   toggle,
 }: {
   icon: string;
+  family?: 'community' | 'material';
   label: string;
   onPress?: () => void;
   danger?: boolean;
@@ -549,7 +581,9 @@ function Row({
       onPress={onPress}
       disabled={disabled || (!onPress && !toggle)}
       activeOpacity={toggle ? 1 : 0.6}>
-      <Icon name={icon} size={20} color={iconColor} />
+      <View style={[styles.rowIconTile, {backgroundColor: `${iconColor}1F`}]}>
+        <Icon name={icon} family={family} size={18} color={iconColor} />
+      </View>
       <Text
         style={[
           styles.rowLabel,
@@ -578,6 +612,18 @@ function Row({
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
+    heroHeader: {
+      backgroundColor: colors.accent,
+      paddingBottom: 18,
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+    },
+    heroTitle: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: colors.white,
+      marginHorizontal: 16,
+    },
     content: {
       padding: 16,
       maxWidth: 600,
@@ -588,10 +634,9 @@ const createStyles = (colors: AppColors) =>
       marginBottom: 24,
     },
     sectionTitle: {
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: '700',
       color: colors.textMuted,
-      textTransform: 'uppercase',
       marginBottom: 8,
       marginLeft: 4,
     },
@@ -643,6 +688,10 @@ const createStyles = (colors: AppColors) =>
     themeChipLabelActive: {
       color: colors.white,
     },
+    fontSizeCard: {
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+    },
     fontSizeRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -670,6 +719,7 @@ const createStyles = (colors: AppColors) =>
     },
     fontSizePreview: {
       marginTop: 10,
+      fontSize: 15,
       color: colors.text,
       textAlign: 'center',
     },
@@ -681,6 +731,13 @@ const createStyles = (colors: AppColors) =>
       paddingHorizontal: 16,
       borderBottomWidth: 1,
       borderBottomColor: colors.border,
+    },
+    rowIconTile: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     rowLabel: {
       flex: 1,

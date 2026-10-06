@@ -6,6 +6,7 @@ import {
   TextProps,
   TextInputProps,
 } from 'react-native';
+import {useFontScale} from '../theme/FontScaleContext';
 
 /**
  * Applies the app's professional UI font (Inter) to every `Text`/`TextInput`
@@ -24,6 +25,26 @@ import {
  * android/app/src/main/assets/fonts/) and selected here by reading the
  * already-set `fontWeight` out of the flattened style.
  */
+
+/** Scales a flattened style's `fontSize`/`lineHeight` by the user's Settings
+ * -> Text Size preference, applied here (rather than requiring every call
+ * site to opt in via `AppText`) so the setting actually affects the whole
+ * app. Returns `null` when there's nothing to scale, so callers can skip
+ * adding an extra style layer at the default 100%. */
+function scaledSizeStyle(
+  flat: {fontSize?: unknown; lineHeight?: unknown},
+  fontScale: number,
+): {fontSize: number; lineHeight?: number} | null {
+  if (fontScale === 1 || typeof flat.fontSize !== 'number') {
+    return null;
+  }
+  return {
+    fontSize: flat.fontSize * fontScale,
+    ...(typeof flat.lineHeight === 'number'
+      ? {lineHeight: flat.lineHeight * fontScale}
+      : null),
+  };
+}
 
 function fontFamilyForWeight(weight: unknown): string {
   switch (String(weight ?? '400')) {
@@ -49,12 +70,17 @@ export const Text = React.forwardRef<
   React.ComponentRef<typeof RNText>,
   TextProps
 >(function Text(props, ref) {
+  const {fontScale} = useFontScale();
   const flat = StyleSheet.flatten(props.style) ?? {};
   return (
     <RNText
       ref={ref}
       {...props}
-      style={[{fontFamily: fontFamilyForWeight(flat.fontWeight)}, props.style]}
+      style={[
+        {fontFamily: fontFamilyForWeight(flat.fontWeight)},
+        props.style,
+        scaledSizeStyle(flat, fontScale),
+      ]}
     />
   );
 });
@@ -63,12 +89,17 @@ export const TextInput = React.forwardRef<
   React.ComponentRef<typeof RNTextInput>,
   TextInputProps
 >(function TextInput(props, ref) {
+  const {fontScale} = useFontScale();
   const flat = StyleSheet.flatten(props.style) ?? {};
   return (
     <RNTextInput
       ref={ref}
       {...props}
-      style={[{fontFamily: fontFamilyForWeight(flat.fontWeight)}, props.style]}
+      style={[
+        {fontFamily: fontFamilyForWeight(flat.fontWeight)},
+        props.style,
+        scaledSizeStyle(flat, fontScale),
+      ]}
     />
   );
 });

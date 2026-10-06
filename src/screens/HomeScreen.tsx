@@ -29,11 +29,7 @@ import {
   renameDocument,
   searchDocumentsByText,
 } from '../db/database';
-import {
-  copyPageFile,
-  deleteDocumentFiles,
-  getStorageUsageBytes,
-} from '../services/fileStorage';
+import {copyPageFile, deleteDocumentFiles} from '../services/fileStorage';
 import {
   buildPdfFromImages,
   parsePageOcrBlocks,
@@ -50,13 +46,12 @@ import DocumentListRow from '../components/DocumentListRow';
 import FirstLaunchTips, {hasSeenTips} from '../components/FirstLaunchTips';
 import FolderPickerModal from '../components/FolderPickerModal';
 import OptionSheet, {SheetOption} from '../components/OptionSheet';
-import ToolGrid, {ToolShortcut} from '../components/ToolGrid';
-import Icon from '../components/Icon';
+import Icon, {IconFamily} from '../components/Icon';
+import FeatureBadge from '../components/FeatureBadge';
 import ScreenBackground from '../components/ScreenBackground';
-import LinearGradient from 'react-native-linear-gradient';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
-import {formatBytes, scanTimestampName} from '../utils/format';
+import {scanTimestampName} from '../utils/format';
 import {promptForText} from '../utils/promptForText';
 import {percentWidth, useResponsive} from '../utils/responsive';
 
@@ -84,10 +79,15 @@ const SORT_MODE_KEY = 'lavati_home_sort_mode';
 /** Sentinel key for the "No Folder" section in collapse-state tracking, since its folderId is null. */
 const ROOT_SECTION_KEY = '__root__';
 
-const VIEW_OPTIONS = [
-  {key: 'grid', label: 'Grid', icon: 'grid-view'},
-  {key: 'list', label: 'List', icon: 'view-list'},
-  {key: 'folder', label: 'Folder View', icon: 'folder-open'},
+const VIEW_OPTIONS: SheetOption[] = [
+  {key: 'grid', label: 'Grid', icon: 'view-grid-outline', family: 'community'},
+  {key: 'list', label: 'List', icon: 'view-list-outline', family: 'community'},
+  {
+    key: 'folder',
+    label: 'Folder View',
+    icon: 'folder-open-outline',
+    family: 'community',
+  },
 ];
 
 const SORT_OPTIONS: SheetOption[] = [
@@ -131,15 +131,6 @@ const SORT_OPTIONS: SheetOption[] = [
 
 const SORT_MODE_KEYS: SortMode[] = SORT_OPTIONS.map(o => o.key as SortMode);
 
-function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 5) return 'Good night';
-  if (hour < 12) return 'Good morning';
-  if (hour < 17) return 'Good afternoon';
-  if (hour < 21) return 'Good evening';
-  return 'Good night';
-}
-
 export default function HomeScreen({navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
@@ -156,6 +147,7 @@ export default function HomeScreen({navigation}: Props) {
   const [sortMode, setSortMode] = useState<SortMode>('modified_desc');
   const [viewSheetVisible, setViewSheetVisible] = useState(false);
   const [sortSheetVisible, setSortSheetVisible] = useState(false);
+  const [importSheetVisible, setImportSheetVisible] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [folderAction, setFolderAction] = useState<FolderAction>(null);
@@ -165,7 +157,6 @@ export default function HomeScreen({navigation}: Props) {
     new Set(),
   );
   const [driveConnected, setDriveConnected] = useState(false);
-  const [storageBytes, setStorageBytes] = useState(0);
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [deletableFolderId, setDeletableFolderId] = useState<string | null>(
     null,
@@ -359,15 +350,6 @@ export default function HomeScreen({navigation}: Props) {
     setDriveConnected(isGoogleDriveSignedIn());
     setLoading(false);
     resolveThumbnails(docs);
-    // Deliberately not awaited/in the Promise.all above - this walks every
-    // document folder on disk, which with a lot of documents was slow
-    // enough to visibly hold up the screen's main loading spinner on every
-    // single visit to Home. The storage figure is a secondary stat; letting
-    // it resolve in the background and update the hero card whenever it's
-    // ready keeps the actual document list fast and focus-reload snappy.
-    getStorageUsageBytes()
-      .then(setStorageBytes)
-      .catch(() => undefined);
   }, [resolveThumbnails]);
 
   useFocusEffect(
@@ -436,13 +418,6 @@ export default function HomeScreen({navigation}: Props) {
     } finally {
       setImportingTray(null);
     }
-  }
-
-  /** No dedicated share-picker screen exists - dropping the user into
-   * selection mode reuses the already-wired bulk Share action instead of
-   * duplicating its PDF-build-and-share logic here. */
-  function handleShareAsPdfTray() {
-    setSelectionMode(true);
   }
 
   async function handleShareSingleDocument(doc: DocumentSummary) {
@@ -719,56 +694,15 @@ export default function HomeScreen({navigation}: Props) {
   const currentViewOption = VIEW_OPTIONS.find(o => o.key === viewMode)!;
 
   const moreMenuOptions: SheetOption[] = [
+    {key: 'share', label: 'Share', icon: 'share'},
     {key: 'rename', label: 'Rename', icon: 'edit'},
     {key: 'move', label: 'Move / Copy', icon: 'drive-file-move'},
     {key: 'delete', label: 'Delete', icon: 'delete-outline', color: colors.danger},
   ];
 
-  const homeShortcuts: ToolShortcut[] = [
-    {key: 'docs', icon: 'description', label: 'Smart Scan', onPress: handleNewScan},
-    {
-      key: 'idcard',
-      icon: 'badge',
-      label: 'ID Card',
-      onPress: () =>
-        navigation.navigate('Scan', {folderId: null, mode: 'idcard'}),
-    },
-    {
-      key: 'import',
-      icon: 'file-upload',
-      label: 'Import Files',
-      onPress: handleImportFilesTray,
-    },
-    {
-      key: 'images',
-      icon: 'image',
-      label: 'Import Images',
-      onPress: handleImportImagesTray,
-    },
-    {
-      key: 'share',
-      icon: 'picture-as-pdf',
-      label: 'Share as PDF',
-      onPress: handleShareAsPdfTray,
-    },
-    {
-      key: 'editor',
-      icon: 'edit-document',
-      label: 'Edit PDF',
-      onPress: () => navigation.navigate('PdfEditor'),
-    },
-    {
-      key: 'sign',
-      icon: 'draw',
-      label: 'Sign',
-      onPress: () => navigation.navigate('SignPdf'),
-    },
-    {
-      key: 'more',
-      icon: 'apps',
-      label: 'More Tools',
-      onPress: () => navigation.navigate('Tools'),
-    },
+  const importOptions: SheetOption[] = [
+    {key: 'files', label: 'Import Files', icon: 'file-upload'},
+    {key: 'images', label: 'Import Images', icon: 'image'},
   ];
 
   return (
@@ -791,52 +725,46 @@ export default function HomeScreen({navigation}: Props) {
         </View>
       ) : (
         <>
-          <View style={styles.searchRow}>
-            <View style={styles.searchBar}>
-              <Icon name="search" size={20} color={colors.textMuted} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search"
-                placeholderTextColor={colors.textMuted}
-                value={query}
-                onChangeText={setQuery}
-              />
+          <View style={styles.heroHeader}>
+            <View style={styles.searchRow}>
+              <View style={styles.searchBar}>
+                <Icon name="search" size={20} color="rgba(255,255,255,0.75)" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search documents"
+                  placeholderTextColor="rgba(255,255,255,0.75)"
+                  value={query}
+                  onChangeText={setQuery}
+                />
+              </View>
             </View>
-            <TouchableOpacity
-              style={styles.settingsBtn}
-              onPress={() => navigation.navigate('Settings')}
-              hitSlop={8}>
-              <Icon name="settings" size={22} color={colors.text} />
-            </TouchableOpacity>
           </View>
 
-          <LinearGradient
-            colors={colors.gradientSunset}
-            start={{x: 0, y: 0}}
-            end={{x: 1, y: 1}}
-            style={styles.heroCard}>
-            <Text style={styles.heroGreeting}>{greeting()}</Text>
-            <View style={styles.heroStatsRow}>
-              <View style={styles.heroStatChip}>
-                <Icon name="description" size={14} color={colors.white} />
-                <Text style={styles.heroStatText}>
-                  {documents.length} scan{documents.length === 1 ? '' : 's'}
-                </Text>
-              </View>
-              <View style={styles.heroStatChip}>
-                <Icon name="folder" size={14} color={colors.white} />
-                <Text style={styles.heroStatText}>
-                  {folders.length} folder{folders.length === 1 ? '' : 's'}
-                </Text>
-              </View>
-              <View style={styles.heroStatChip}>
-                <Icon name="sd-storage" size={14} color={colors.white} />
-                <Text style={styles.heroStatText}>
-                  {formatBytes(storageBytes)}
-                </Text>
-              </View>
-            </View>
-          </LinearGradient>
+          <View style={styles.quickActionsCard}>
+            <QuickAction
+              icon="line-scan"
+              family="community"
+              label="Scan"
+              onPress={handleNewScan}
+            />
+            <QuickAction
+              icon="card-account-details-outline"
+              label="ID card"
+              onPress={() =>
+                navigation.navigate('Scan', {folderId: null, mode: 'idcard'})
+              }
+            />
+            <QuickAction
+              icon="file-import-outline"
+              label="Import"
+              onPress={() => setImportSheetVisible(true)}
+            />
+            <QuickAction
+              icon="signature-freehand"
+              label="Sign"
+              onPress={() => navigation.navigate('SignPdf')}
+            />
+          </View>
 
           <View style={styles.sectionRow}>
             <Text style={styles.sectionTitle}>
@@ -846,25 +774,45 @@ export default function HomeScreen({navigation}: Props) {
               onPress={handleCreateFolder}
               hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon name="create-new-folder" size={20} color={colors.text} />
+              <Icon
+                name="folder-plus-outline"
+                family="community"
+                size={20}
+                color={colors.text}
+              />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setViewSheetVisible(true)}
               hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon name={currentViewOption.icon} size={20} color={colors.text} />
+              <Icon
+                name={currentViewOption.icon}
+                family={currentViewOption.family}
+                size={20}
+                color={colors.text}
+              />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setSortSheetVisible(true)}
               hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon name="sort" size={20} color={colors.text} />
+              <Icon
+                name="swap-vertical"
+                family="community"
+                size={20}
+                color={colors.text}
+              />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setSelectionMode(true)}
               hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon name="check-circle-outline" size={20} color={colors.text} />
+              <Icon
+                name="checkbox-marked-outline"
+                family="community"
+                size={20}
+                color={colors.text}
+              />
             </TouchableOpacity>
           </View>
         </>
@@ -947,7 +895,6 @@ export default function HomeScreen({navigation}: Props) {
               selected={selectedIds.includes(item.id)}
               showSyncStatus={driveConnected}
               thumbnailUri={thumbnails[item.id]}
-              onShare={() => handleShareSingleDocument(item)}
               onMore={() => setMoreMenuDoc(item)}
             />
           )}
@@ -1070,16 +1017,7 @@ export default function HomeScreen({navigation}: Props) {
             onPress={handleBulkDelete}
           />
         </View>
-      ) : (
-        <View style={styles.toolTray}>
-          <ToolGrid
-            shortcuts={homeShortcuts}
-            columns={4}
-            busyKey={importingTray}
-            compact
-          />
-        </View>
-      )}
+      ) : null}
 
       <FolderPickerModal
         visible={folderAction !== null}
@@ -1109,7 +1047,13 @@ export default function HomeScreen({navigation}: Props) {
         options={moreMenuOptions}
         selectedKey=""
         onSelect={key => {
-          if (key === 'rename') {
+          if (key === 'share') {
+            const doc = moreMenuDoc;
+            setMoreMenuDoc(null);
+            if (doc) {
+              handleShareSingleDocument(doc);
+            }
+          } else if (key === 'rename') {
             handleRenameFromMenu();
           } else if (key === 'move') {
             handleMoveFromMenu();
@@ -1118,6 +1062,21 @@ export default function HomeScreen({navigation}: Props) {
           }
         }}
         onClose={() => setMoreMenuDoc(null)}
+      />
+      <OptionSheet
+        visible={importSheetVisible}
+        title="Import"
+        options={importOptions}
+        selectedKey=""
+        onSelect={key => {
+          setImportSheetVisible(false);
+          if (key === 'files') {
+            handleImportFilesTray();
+          } else if (key === 'images') {
+            handleImportImagesTray();
+          }
+        }}
+        onClose={() => setImportSheetVisible(false)}
       />
       {showTips && <FirstLaunchTips onDone={() => setShowTips(false)} />}
     </ScreenBackground>
@@ -1172,8 +1131,42 @@ function BulkAction({
   );
 }
 
+function QuickAction({
+  icon,
+  family = 'community',
+  label,
+  onPress,
+}: {
+  icon: string;
+  family?: IconFamily;
+  label: string;
+  onPress: () => void;
+}) {
+  const {colors} = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
+  return (
+    <TouchableOpacity style={styles.quickAction} onPress={onPress}>
+      <FeatureBadge
+        icon={icon}
+        family={family}
+        color={colors.accent}
+        size={46}
+        variant="soft"
+      />
+      <Text style={styles.quickActionLabel}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
+    heroHeader: {
+      backgroundColor: colors.accent,
+      paddingTop: 6,
+      paddingBottom: 38,
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+    },
     searchRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -1189,71 +1182,38 @@ const createStyles = (colors: AppColors) =>
       paddingHorizontal: 14,
       height: 46,
       borderRadius: 14,
-      backgroundColor: colors.surface,
+      backgroundColor: 'rgba(255,255,255,0.16)',
       borderWidth: 1,
-      borderColor: colors.border,
-      elevation: 1,
-      shadowColor: colors.black,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.06,
-      shadowRadius: 3,
+      borderColor: 'rgba(255,255,255,0.25)',
     },
     searchInput: {
       flex: 1,
       fontSize: 14,
-      color: colors.text,
+      color: colors.white,
       padding: 0,
     },
-    settingsBtn: {
-      width: 46,
-      height: 46,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      elevation: 1,
-      shadowColor: colors.black,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.06,
-      shadowRadius: 3,
-    },
-    heroCard: {
+    quickActionsCard: {
+      flexDirection: 'row',
       marginHorizontal: 16,
-      marginTop: 16,
-      borderRadius: 20,
-      padding: 18,
+      marginTop: -26,
+      borderRadius: 18,
+      backgroundColor: colors.surface,
+      paddingVertical: 12,
       elevation: 4,
       shadowColor: colors.black,
       shadowOffset: {width: 0, height: 3},
       shadowOpacity: 0.15,
       shadowRadius: 8,
     },
-    heroGreeting: {
-      fontSize: 19,
-      fontWeight: '700',
-      color: colors.white,
-    },
-    heroStatsRow: {
-      flexDirection: 'row',
-      flexWrap: 'wrap',
-      gap: 8,
-      marginTop: 14,
-    },
-    heroStatChip: {
-      flexDirection: 'row',
+    quickAction: {
+      flex: 1,
       alignItems: 'center',
-      gap: 5,
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 12,
-      backgroundColor: 'rgba(255,255,255,0.22)',
+      gap: 6,
     },
-    heroStatText: {
+    quickActionLabel: {
       fontSize: 12,
       fontWeight: '600',
-      color: colors.white,
+      color: colors.text,
     },
     sectionRow: {
       flexDirection: 'row',
@@ -1266,10 +1226,8 @@ const createStyles = (colors: AppColors) =>
     sectionTitle: {
       flex: 1,
       fontSize: 14,
-      fontWeight: '800',
-      letterSpacing: 0.4,
+      fontWeight: '700',
       color: colors.textMuted,
-      textTransform: 'uppercase',
     },
     sectionIconBtn: {
       width: 34,
@@ -1283,21 +1241,6 @@ const createStyles = (colors: AppColors) =>
     },
     listArea: {
       flex: 1,
-    },
-    toolTray: {
-      backgroundColor: colors.surface,
-      borderTopLeftRadius: 24,
-      borderTopRightRadius: 24,
-      borderTopWidth: 1,
-      borderColor: colors.border,
-      paddingHorizontal: 16,
-      paddingTop: 12,
-      paddingBottom: 10,
-      elevation: 8,
-      shadowColor: colors.black,
-      shadowOffset: {width: 0, height: -2},
-      shadowOpacity: 0.08,
-      shadowRadius: 6,
     },
     selectionBar: {
       flexDirection: 'row',

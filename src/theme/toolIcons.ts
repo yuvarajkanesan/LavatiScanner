@@ -30,24 +30,25 @@ export const toolIcons: Record<
   | 'more',
   ToolIconToken
 > = {
-  // These icon names are MaterialIcons glyphs (matching the screen's
-  // pre-existing icon strings) — must pin family: 'material' since
-  // FeatureBadge defaults to MaterialCommunityIcons, which doesn't have them.
-  docs: {icon: 'document-scanner', family: 'material', color: '#3B82F6'},
-  idcard: {icon: 'badge', family: 'material', color: '#8B5CF6'},
-  book: {icon: 'menu-book', family: 'material', color: '#F59E0B'},
-  qrcode: {icon: 'qr-code-scanner', family: 'material', color: '#0EA5A5'},
-  totext: {icon: 'text-fields', family: 'material', color: '#0EA5E9'},
-  folders: {icon: 'folder', color: '#E0A32E'},
-  import: {icon: 'file-upload', color: '#22C55E'},
+  // Thin outline glyphs (MaterialCommunityIcons) to match the app's current
+  // icon language (Home's quick actions, Settings' rows) — colors are no
+  // longer rendered (ToolGrid always tints with the theme accent), but stay
+  // defined here in case a future screen wants per-tool color coding back.
+  docs: {icon: 'line-scan', color: '#3B82F6'},
+  idcard: {icon: 'card-account-details-outline', color: '#8B5CF6'},
+  book: {icon: 'book-open-outline', color: '#F59E0B'},
+  qrcode: {icon: 'qrcode-scan', color: '#0EA5A5'},
+  totext: {icon: 'text-recognition', color: '#0EA5E9'},
+  folders: {icon: 'folder-outline', color: '#E0A32E'},
+  import: {icon: 'file-import-outline', color: '#22C55E'},
   merge: {icon: 'call-merge', color: '#6366F1'},
-  editor: {icon: 'edit-document', family: 'material', color: '#0891B2'},
-  sign: {icon: 'draw', color: '#8B5CF6'},
-  unlock: {icon: 'lock-open', color: '#EF4444'},
-  collage: {icon: 'grid-view', family: 'material', color: '#F97316'},
-  watermark: {icon: 'branding-watermark', family: 'material', color: '#0EA5E9'},
-  compression: {icon: 'compress', family: 'material', color: '#14B8A6'},
-  images: {icon: 'image', family: 'material', color: '#22C55E'},
-  share: {icon: 'picture-as-pdf', family: 'material', color: '#EF4444'},
-  more: {icon: 'apps', family: 'material', color: '#64748B'},
+  editor: {icon: 'file-document-edit-outline', color: '#0891B2'},
+  sign: {icon: 'signature-freehand', color: '#8B5CF6'},
+  unlock: {icon: 'lock-open-variant-outline', color: '#EF4444'},
+  collage: {icon: 'image-multiple-outline', color: '#F97316'},
+  watermark: {icon: 'water-outline', color: '#0EA5E9'},
+  compression: {icon: 'arrow-collapse', color: '#14B8A6'},
+  images: {icon: 'image-outline', color: '#22C55E'},
+  share: {icon: 'share-outline', color: '#EF4444'},
+  more: {icon: 'dots-grid', color: '#64748B'},
 };

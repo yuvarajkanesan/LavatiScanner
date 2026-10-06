@@ -51,9 +51,10 @@ export default function RootNavigator() {
       }}>
       <Stack.Navigator
         screenOptions={{
-          headerStyle: {backgroundColor: colors.background},
-          headerTitleStyle: {color: colors.text},
-          headerTintColor: colors.accent,
+          headerStyle: {backgroundColor: colors.accent},
+          headerTitleStyle: {color: colors.white, fontWeight: '700'},
+          headerTintColor: colors.white,
+          headerShadowVisible: false,
           contentStyle: {backgroundColor: colors.background},
         }}>
         <Stack.Screen
@@ -114,12 +115,12 @@ export default function RootNavigator() {
         <Stack.Screen
           name="PdfEditor"
           component={PdfEditorScreen}
-          options={{title: 'PDF Editor'}}
+          options={{title: ''}}
         />
         <Stack.Screen
           name="PdfPasswordRemove"
           component={PdfPasswordRemoveScreen}
-          options={{title: 'PDF Restrictions'}}
+          options={{title: 'Remove Password'}}
         />
         <Stack.Screen
           name="SignPage"

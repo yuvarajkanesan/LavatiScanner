@@ -2,9 +2,10 @@ import React from 'react';
 import {StyleProp, TextStyle} from 'react-native';
 import MaterialIcons from 'react-native-vector-icons/MaterialIcons';
 import MaterialCommunityIcons from 'react-native-vector-icons/MaterialCommunityIcons';
+import Ionicons from 'react-native-vector-icons/Ionicons';
 import {colors} from '../theme/colors';
 
-export type IconFamily = 'material' | 'community';
+export type IconFamily = 'material' | 'community' | 'ionicons';
 
 interface Props {
   name: string;
@@ -25,6 +26,9 @@ export default function Icon({
     return (
       <MaterialCommunityIcons name={name} size={size} color={color} style={style} />
     );
+  }
+  if (family === 'ionicons') {
+    return <Ionicons name={name} size={size} color={color} style={style} />;
   }
   return <MaterialIcons name={name} size={size} color={color} style={style} />;
 }

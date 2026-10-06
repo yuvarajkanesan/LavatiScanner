@@ -1,9 +1,11 @@
 import React, {useMemo, useState} from 'react';
-import {ScrollView, StyleSheet, Text, View} from 'react-native';
+import {ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import Alert from '../utils/customAlert';
 import {TabScreenProps} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
 import {importFilesAsDocuments} from '../services/importFiles';
+import Icon from '../components/Icon';
 import ScreenBackground from '../components/ScreenBackground';
 import ToolGrid, {ToolShortcut} from '../components/ToolGrid';
 import {AppColors} from '../theme/colors';
@@ -15,8 +17,10 @@ type Shortcut = ToolShortcut;
 export default function ToolsScreen({navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   const session = useScanSession();
   const [importing, setImporting] = useState(false);
+  const [query, setQuery] = useState('');
 
   function startScan() {
     session.startSession(null);
@@ -125,7 +129,7 @@ export default function ToolsScreen({navigation}: Props) {
     {
       key: 'unlock',
       icon: 'lock-open',
-      label: 'Remove Restrictions',
+      label: 'Remove Password',
       onPress: () => navigation.navigate('PdfPasswordRemove'),
     },
     {
@@ -148,18 +152,48 @@ export default function ToolsScreen({navigation}: Props) {
     },
   ];
 
+  const q = query.trim().toLowerCase();
+  const filteredScan = q
+    ? scanShortcuts.filter(s => s.label.toLowerCase().includes(q))
+    : scanShortcuts;
+  const filteredFiles = q
+    ? fileShortcuts.filter(s => s.label.toLowerCase().includes(q))
+    : fileShortcuts;
+
   return (
     <ScreenBackground>
+      <View style={[styles.heroHeader, {paddingTop: insets.top + 10}]}>
+        <Text style={styles.heroTitle}>Tools</Text>
+        <View style={styles.searchRow}>
+          <View style={styles.searchBar}>
+            <Icon name="search" size={20} color="rgba(255,255,255,0.75)" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search tools"
+              placeholderTextColor="rgba(255,255,255,0.75)"
+              value={query}
+              onChangeText={setQuery}
+            />
+          </View>
+        </View>
+      </View>
       <ScrollView contentContainerStyle={styles.content}>
-        <Section title="Scan">
-          <ToolGrid shortcuts={scanShortcuts} />
-        </Section>
-        <Section title="Process Files">
-          <ToolGrid
-            shortcuts={fileShortcuts}
-            busyKey={importing ? 'import' : null}
-          />
-        </Section>
+        {filteredScan.length > 0 && (
+          <Section title="Scan">
+            <ToolGrid shortcuts={filteredScan} />
+          </Section>
+        )}
+        {filteredFiles.length > 0 && (
+          <Section title="Process files">
+            <ToolGrid
+              shortcuts={filteredFiles}
+              busyKey={importing ? 'import' : null}
+            />
+          </Section>
+        )}
+        {filteredScan.length === 0 && filteredFiles.length === 0 && (
+          <Text style={styles.noMatches}>No tools match "{query}".</Text>
+        )}
       </ScrollView>
     </ScreenBackground>
   );
@@ -184,6 +218,43 @@ function Section({
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
+    heroHeader: {
+      backgroundColor: colors.accent,
+      paddingBottom: 16,
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+    },
+    heroTitle: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: colors.white,
+      marginHorizontal: 16,
+      marginBottom: 12,
+    },
+    searchRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginHorizontal: 16,
+    },
+    searchBar: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingHorizontal: 14,
+      height: 46,
+      borderRadius: 14,
+      backgroundColor: 'rgba(255,255,255,0.16)',
+      borderWidth: 1,
+      borderColor: 'rgba(255,255,255,0.25)',
+    },
+    searchInput: {
+      flex: 1,
+      fontSize: 14,
+      color: colors.white,
+      padding: 0,
+    },
     content: {
       padding: 16,
       paddingBottom: 32,
@@ -192,11 +263,16 @@ const createStyles = (colors: AppColors) =>
       marginBottom: 24,
     },
     sectionTitle: {
-      fontSize: 13,
+      fontSize: 14,
       fontWeight: '700',
       color: colors.textMuted,
-      textTransform: 'uppercase',
       marginBottom: 10,
       marginLeft: 4,
+    },
+    noMatches: {
+      marginTop: 40,
+      textAlign: 'center',
+      fontSize: 14,
+      color: colors.textMuted,
     },
   });

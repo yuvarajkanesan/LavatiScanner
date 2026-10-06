@@ -133,7 +133,7 @@ export default function SignPdfScreen() {
       if (!(await isPdfRenderable(picked.uri))) {
         Alert.alert(
           "Can't preview this PDF",
-          "This PDF is password-protected, so its pages can't be shown for positioning. Remove its restrictions first in Tools > Remove Restrictions.",
+          "This PDF is password-protected, so its pages can't be shown for positioning. Remove its restrictions first in Tools > Remove Password.",
         );
         return;
       }

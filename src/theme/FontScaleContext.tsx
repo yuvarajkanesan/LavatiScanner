@@ -50,10 +50,18 @@ export function FontScaleProvider({
   );
 }
 
+const FALLBACK_VALUE: FontScaleContextValue = {
+  fontScale: DEFAULT_FONT_SCALE,
+  setFontScale: () => {},
+};
+
+/** Every `Text`/`TextInput` in `src/` calls this (see
+ * `src/shims/react-native-font.tsx`), including ones that can render outside
+ * the provider - e.g. `ErrorBoundary`'s fallback UI, which deliberately
+ * sits above `FontScaleProvider` in `App.tsx` so it still works if the
+ * provider itself is what's throwing. Falling back to the 100% default
+ * instead of throwing keeps that safety net intact. */
 export function useFontScale(): FontScaleContextValue {
   const ctx = useContext(FontScaleContext);
-  if (!ctx) {
-    throw new Error('useFontScale must be used within a FontScaleProvider');
-  }
-  return ctx;
+  return ctx ?? FALLBACK_VALUE;
 }

@@ -17,11 +17,10 @@ import Icon from '../components/Icon';
 import { useTheme } from '../theme/ThemeContext';
 
 function HomeHeaderTitle() {
-  const { colors } = useTheme();
   return (
     <View style={styles.headerTitleRow}>
       <Image source={require('../assets/app-icon.png')} style={styles.headerIcon} />
-      <Text style={[styles.headerTitleText, { color: colors.text }]}>Lavati Scanner</Text>
+      <Text style={[styles.headerTitleText, { color: '#FFFFFF' }]}>Lavati Scanner</Text>
     </View>
   );
 }
@@ -55,24 +54,9 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 const ICONS_OUTLINE: Record<keyof MainTabParamList, string> = {
   Home: 'home-outline',
   AllFiles: 'file-multiple-outline',
-  Tools: 'toolbox-outline',
+  Tools: 'tools',
   Settings: 'cog-outline',
 };
-const ICONS_FILLED: Record<keyof MainTabParamList, string> = {
-  Home: 'home',
-  AllFiles: 'file-multiple',
-  Tools: 'toolbox',
-  Settings: 'cog',
-};
-/** Each tab gets its own color from the fun palette instead of one uniform
- * accent, so the bar itself reads as playful/colorful. */
-const TAB_COLOR_INDEX: Record<keyof MainTabParamList, number> = {
-  Home: 0,
-  AllFiles: 3,
-  Tools: 5,
-  Settings: 4,
-};
-
 function TabIcon({
   focused,
   name,
@@ -99,12 +83,7 @@ function TabIcon({
   }));
 
   return (
-    <Animated.View
-      style={[
-        styles.tabIconWrap,
-        focused && { backgroundColor: `${activeColor}26` },
-        animatedStyle,
-      ]}>
+    <Animated.View style={[styles.tabIconWrap, animatedStyle]}>
       <Icon
         name={name}
         family="community"
@@ -138,6 +117,7 @@ export default function MainTabs() {
           />
         ),
         headerShadowVisible: false,
+        tabBarActiveTintColor: colors.accent,
         tabBarInactiveTintColor: colors.textMuted,
         tabBarStyle: {
           borderTopColor: colors.border,
@@ -154,12 +134,11 @@ export default function MainTabs() {
         tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
         tabBarIcon: ({ focused, color, size }) => {
           const name = route.name as keyof MainTabParamList;
-          const activeColor = colors.funPalette[TAB_COLOR_INDEX[name]];
           return (
             <TabIcon
               focused={focused}
-              name={focused ? ICONS_FILLED[name] : ICONS_OUTLINE[name]}
-              activeColor={activeColor}
+              name={ICONS_OUTLINE[name]}
+              activeColor={colors.accent}
               inactiveColor={color}
               size={size}
             />
@@ -173,7 +152,13 @@ export default function MainTabs() {
           title: 'Lavati Scanner',
           headerTitle: () => <HomeHeaderTitle />,
           tabBarLabel: 'Home',
-          tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Home],
+          // Solid accent-blue header (not the shared pale gradient wash) -
+          // HomeScreen's own search-bar block continues this same blue
+          // underneath it, so the two read as one seamless banner.
+          headerStyle: { elevation: 0, shadowOpacity: 0 },
+          headerBackground: () => (
+            <View style={{ flex: 1, backgroundColor: colors.accent }} />
+          ),
         }}
       />
       <Tab.Screen
@@ -182,28 +167,25 @@ export default function MainTabs() {
         options={{
           title: 'All Files',
           headerShown: false,
-          tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.AllFiles],
+          tabBarLabel: 'Files',
         }}
       />
-      {/* Tools and Settings stay reachable (Home's tool tray and settings
-          icon navigate to them directly) but are hidden from the bar itself
-          — only Home and All Files show as bottom tabs. */}
       <Tab.Screen
         name="Tools"
         component={ToolsScreen}
         options={{
-          tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Tools],
-          tabBarButton: () => null,
-          tabBarItemStyle: {display: 'none'},
+          title: 'Tools',
+          headerShown: false,
+          tabBarLabel: 'Tools',
         }}
       />
       <Tab.Screen
         name="Settings"
         component={SettingsScreen}
         options={{
-          tabBarActiveTintColor: colors.funPalette[TAB_COLOR_INDEX.Settings],
-          tabBarButton: () => null,
-          tabBarItemStyle: {display: 'none'},
+          title: 'Settings',
+          headerShown: false,
+          tabBarLabel: 'Settings',
         }}
       />
     </Tab.Navigator>

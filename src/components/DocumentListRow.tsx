@@ -5,7 +5,7 @@ import Icon from './Icon';
 import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { DocumentSummary } from '../types/models';
-import { formatBytes, formatDate, formatTime } from '../utils/format';
+import { formatBytes, formatDate } from '../utils/format';
 import { isDocumentSynced } from '../services/driveBackup';
 
 interface Props {
@@ -43,7 +43,6 @@ export default function DocumentListRow({
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const accentColor = colors.funPalette[index % colors.funPalette.length];
   const synced = isDocumentSynced(document);
   return (
     <TouchableOpacity
@@ -51,7 +50,6 @@ export default function DocumentListRow({
       onPress={onPress}
       onLongPress={onLongPress}
       activeOpacity={0.7}>
-      <View style={[styles.accentStripe, { backgroundColor: accentColor }]} />
       {selectionMode && (
         <View style={[styles.checkCircle, selected && styles.checkCircleSelected]}>
           {selected && <Icon name="check" size={14} color={colors.white} />}
@@ -60,7 +58,7 @@ export default function DocumentListRow({
       {document.thumbnailPath ? (
         <Image
           source={{ uri: thumbnailUri ?? `file://${document.thumbnailPath}` }}
-          style={[styles.thumbnail, { borderColor: `${accentColor}55` }]}
+          style={styles.thumbnail}
           resizeMode="cover"
         />
       ) : (
@@ -70,10 +68,9 @@ export default function DocumentListRow({
         <AppText style={styles.name} numberOfLines={1}>
           {document.name}
         </AppText>
-        <Text style={styles.meta} numberOfLines={2}>
+        <Text style={styles.meta} numberOfLines={1}>
           {document.pageCount} page{document.pageCount === 1 ? '' : 's'} ·{' '}
-          {formatDate(document.updatedAt)} · {formatTime(document.updatedAt)} ·{' '}
-          {formatBytes(document.totalSizeBytes)}
+          {formatDate(document.updatedAt)} · {formatBytes(document.totalSizeBytes)}
         </Text>
       </View>
       {onShare || onMore ? (
@@ -134,13 +131,6 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     shadowOpacity: 0.08,
     shadowRadius: 4,
   },
-  accentStripe: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 5,
-  },
   rowSelected: {
     borderColor: colors.accent,
     borderWidth: 2,
@@ -163,7 +153,6 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     width: 44,
     height: 58,
     borderRadius: 10,
-    borderWidth: 2,
     backgroundColor: colors.border,
   },
   thumbnailPlaceholder: {

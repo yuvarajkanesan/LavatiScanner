@@ -1,5 +1,4 @@
 import React, {useCallback, useMemo, useState} from 'react';
-import LinearGradient from 'react-native-linear-gradient';
 import {
   ActivityIndicator,
   FlatList,
@@ -964,17 +963,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
           </TouchableOpacity>
         </View>
       ) : (
-        <LinearGradient
-          colors={colors.gradientHero}
-          start={{x: 0, y: 0}}
-          end={{x: 1, y: 1}}
-          style={styles.hero}>
-          <FeatureBadge
-            icon="file-document-outline"
-            color={colors.accent}
-            size={46}
-            variant="glow"
-          />
+        <View style={styles.hero}>
           <View style={styles.heroTextWrap}>
             <TouchableOpacity
               style={styles.titleRow}
@@ -987,16 +976,10 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
                 name={f.rename.icon}
                 family={f.rename.family}
                 size={15}
-                color={colors.accent}
+                color={colors.white}
               />
             </TouchableOpacity>
             <View style={styles.subtitleRow}>
-              <Icon
-                name="file-multiple-outline"
-                family="community"
-                size={13}
-                color={colors.textMuted}
-              />
               <Text style={styles.subtitle}>
                 {pages.length} page{pages.length === 1 ? '' : 's'}
               </Text>
@@ -1010,17 +993,17 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
             disabled={moreBusy !== null}
             hitSlop={8}>
             {moreBusy !== null ? (
-              <ActivityIndicator color={colors.accent} size="small" />
+              <ActivityIndicator color={colors.white} size="small" />
             ) : (
               <Icon
                 name="more-vert"
                 family="material"
                 size={22}
-                color={colors.textMuted}
+                color={colors.white}
               />
             )}
           </TouchableOpacity>
-        </LinearGradient>
+        </View>
       )}
 
       {pages.length === 0 ? (
@@ -1060,13 +1043,14 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
                   style={[styles.addTile, {width: pageCardWidthPercent}]}
                   onPress={handleAddPage}
                   activeOpacity={0.7}>
-                  <Icon
-                    name={f.addPage.icon}
+                  <FeatureBadge
+                    icon={f.addPage.icon}
                     family={f.addPage.family}
-                    size={26}
                     color={colors.accent}
+                    size={44}
+                    variant="solid"
                   />
-                  <Text style={styles.addTileText}>Add new pages</Text>
+                  <Text style={styles.addTileText}>Add pages</Text>
                 </TouchableOpacity>
               )
             ) : (
@@ -1097,22 +1081,9 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
                     )}
                   </View>
                 )}
-                <View
-                  style={[
-                    styles.pageBadge,
-                    {
-                      backgroundColor:
-                        colors.funPalette[index % colors.funPalette.length],
-                    },
-                  ]}>
-                  <Icon
-                    name="file-document-outline"
-                    family="community"
-                    size={12}
-                    color={colors.white}
-                  />
+                <View style={styles.pageBadge}>
                   <Text style={styles.pageBadgeText} numberOfLines={1}>
-                    {item.page.pageName || `Page ${index + 1}`}
+                    {index + 1}
                   </Text>
                 </View>
                 {item.page.note ? (
@@ -1177,6 +1148,78 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
                   Delete {selectedPageIds.length} page
                   {selectedPageIds.length === 1 ? '' : 's'}
                 </Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {!pageSelectionMode && pages.length > 0 && (
+        <View
+          style={[styles.docActionBar, {paddingBottom: 14 + insets.bottom}]}>
+          <View style={styles.docActionRow}>
+            <TouchableOpacity
+              style={[styles.docPill, {backgroundColor: `${colors.danger}1A`}]}
+              onPress={handleShareDocumentPdf}
+              disabled={moreBusy !== null}
+              activeOpacity={0.75}>
+              {moreBusy === 'sharePdf' ? (
+                <ActivityIndicator color={colors.danger} size="small" />
+              ) : (
+                <>
+                  <Icon
+                    name={f.sharePdf.icon}
+                    family={f.sharePdf.family}
+                    size={18}
+                    color={colors.danger}
+                  />
+                  <Text style={[styles.docPillText, {color: colors.danger}]}>
+                    Share PDF
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.docPill,
+                {backgroundColor: `${colors.success}1A`},
+              ]}
+              onPress={handleShareDocumentImages}
+              disabled={moreBusy !== null}
+              activeOpacity={0.75}>
+              {moreBusy === 'shareImage' ? (
+                <ActivityIndicator color={colors.success} size="small" />
+              ) : (
+                <>
+                  <Icon
+                    name={f.shareJpg.icon}
+                    family={f.shareJpg.family}
+                    size={18}
+                    color={colors.success}
+                  />
+                  <Text style={[styles.docPillText, {color: colors.success}]}>
+                    Share images
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity
+            style={styles.docEditBtn}
+            onPress={handleEditAsPdf}
+            disabled={moreBusy !== null}
+            activeOpacity={0.85}>
+            {moreBusy === 'editPdf' ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <>
+                <Icon
+                  name={f.editPdf.icon}
+                  family={f.editPdf.family}
+                  size={18}
+                  color={colors.white}
+                />
+                <Text style={styles.docEditBtnText}>Edit PDF</Text>
               </>
             )}
           </TouchableOpacity>
@@ -1372,11 +1415,12 @@ const createStyles = (colors: AppColors) =>
       flexDirection: 'row',
       alignItems: 'center',
       gap: 12,
+      backgroundColor: colors.accent,
       paddingHorizontal: 18,
       paddingTop: 16,
-      paddingBottom: 14,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.border,
+      paddingBottom: 18,
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
     },
     selectionBar: {
       flexDirection: 'row',
@@ -1409,7 +1453,7 @@ const createStyles = (colors: AppColors) =>
     title: {
       fontSize: 19,
       fontWeight: '700',
-      color: colors.text,
+      color: colors.white,
       flexShrink: 1,
     },
     subtitleRow: {
@@ -1420,13 +1464,13 @@ const createStyles = (colors: AppColors) =>
     },
     subtitle: {
       fontSize: 13,
-      color: colors.textMuted,
+      color: 'rgba(255,255,255,0.8)',
     },
     subtitleDot: {
       width: 3,
       height: 3,
       borderRadius: 1.5,
-      backgroundColor: colors.textMuted,
+      backgroundColor: 'rgba(255,255,255,0.8)',
       marginHorizontal: 2,
     },
     moreBtn: {
@@ -1435,7 +1479,7 @@ const createStyles = (colors: AppColors) =>
       borderRadius: 17,
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: colors.surface,
+      backgroundColor: 'rgba(255,255,255,0.16)',
     },
     empty: {
       flex: 1,
@@ -1513,13 +1557,12 @@ const createStyles = (colors: AppColors) =>
       position: 'absolute',
       left: 10,
       top: 10,
-      flexDirection: 'row',
+      width: 26,
+      height: 26,
+      borderRadius: 13,
       alignItems: 'center',
-      gap: 5,
-      paddingHorizontal: 10,
-      paddingVertical: 5,
-      borderRadius: 100,
-      backgroundColor: 'rgba(0,0,0,0.55)',
+      justifyContent: 'center',
+      backgroundColor: colors.accent,
     },
     pageBadgeText: {
       fontSize: 12,
@@ -1577,6 +1620,45 @@ const createStyles = (colors: AppColors) =>
       color: colors.white,
       fontWeight: '700',
       fontSize: 15,
+    },
+    docActionBar: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      gap: 10,
+      borderTopWidth: 1,
+      borderTopColor: colors.border,
+      backgroundColor: colors.background,
+    },
+    docActionRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    docPill: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      height: 46,
+      borderRadius: 23,
+    },
+    docPillText: {
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    docEditBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      height: 50,
+      borderRadius: 25,
+      backgroundColor: colors.accent,
+    },
+    docEditBtnText: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.white,
     },
     noteBadge: {
       position: 'absolute',

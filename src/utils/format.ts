@@ -27,11 +27,16 @@ export function formatTime(timestamp: number): string {
 
 export function formatBytes(bytes: number): string {
   if (bytes <= 0) return '0 B';
+  // Iterative unit stepping rather than `log(bytes) / log(1024)` - that
+  // floating-point division lands just under an integer at exact powers of
+  // 1024 (e.g. exactly 1MB resolves to 1.9999999999999998, not 2), which
+  // floored back to the wrong unit and showed "1024.0 KB" instead of "1 MB".
   const units = ['B', 'KB', 'MB', 'GB'];
-  const exponent = Math.min(
-    Math.floor(Math.log(bytes) / Math.log(1024)),
-    units.length - 1,
-  );
-  const value = bytes / Math.pow(1024, exponent);
-  return `${value.toFixed(exponent === 0 ? 0 : 1)} ${units[exponent]}`;
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  return `${value.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }

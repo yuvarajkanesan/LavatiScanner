@@ -79,10 +79,15 @@ type Section =
  * vice versa, so the two screens' view preferences don't fight each other. */
 const VIEW_MODE_KEY = 'allfiles_view_mode';
 
-const VIEW_OPTIONS = [
-  {key: 'grid', label: 'Grid', icon: 'grid-view'},
-  {key: 'list', label: 'List', icon: 'view-list'},
-  {key: 'folder', label: 'Folder View', icon: 'folder-open'},
+const VIEW_OPTIONS: SheetOption[] = [
+  {key: 'grid', label: 'Grid', icon: 'view-grid-outline', family: 'community'},
+  {key: 'list', label: 'List', icon: 'view-list-outline', family: 'community'},
+  {
+    key: 'folder',
+    label: 'Folder View',
+    icon: 'folder-open-outline',
+    family: 'community',
+  },
 ];
 
 const SORT_OPTIONS: SheetOption[] = [
@@ -658,13 +663,36 @@ export default function FoldersScreen({navigation}: Props) {
         </View>
       ) : (
         <>
-          <View style={[styles.titleRow, {paddingTop: insets.top + 14}]}>
-            <Text style={styles.titleText}>All Files</Text>
+          <View style={[styles.heroHeader, {paddingTop: insets.top + 10}]}>
+            <Text style={styles.heroTitle}>All Files</Text>
+            <View style={styles.searchRow}>
+              <View style={styles.searchBar}>
+                <Icon name="search" size={20} color="rgba(255,255,255,0.75)" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search files"
+                  placeholderTextColor="rgba(255,255,255,0.75)"
+                  value={query}
+                  onChangeText={setQuery}
+                />
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.countRow}>
+            <Text style={styles.countText}>
+              {totalCount} file{totalCount === 1 ? '' : 's'}
+            </Text>
             <TouchableOpacity
               onPress={handleCreateFolder}
               hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon name="create-new-folder" size={20} color={colors.text} />
+              <Icon
+                name="folder-plus-outline"
+                family="community"
+                size={20}
+                color={colors.text}
+              />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setViewSheetVisible(true)}
@@ -672,6 +700,7 @@ export default function FoldersScreen({navigation}: Props) {
               style={styles.sectionIconBtn}>
               <Icon
                 name={VIEW_OPTIONS.find(o => o.key === viewMode)!.icon}
+                family={VIEW_OPTIONS.find(o => o.key === viewMode)!.family}
                 size={20}
                 color={colors.text}
               />
@@ -680,32 +709,23 @@ export default function FoldersScreen({navigation}: Props) {
               onPress={() => setSortSheetVisible(true)}
               hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon name="sort" size={20} color={colors.text} />
+              <Icon
+                name="swap-vertical"
+                family="community"
+                size={20}
+                color={colors.text}
+              />
             </TouchableOpacity>
             <TouchableOpacity
               onPress={() => setSelectionMode(true)}
               hitSlop={6}
               style={styles.sectionIconBtn}>
-              <Icon name="check-circle-outline" size={20} color={colors.text} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.searchRow}>
-            <View style={styles.searchBar}>
-              <Icon name="search" size={20} color={colors.textMuted} />
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Search"
-                placeholderTextColor={colors.textMuted}
-                value={query}
-                onChangeText={setQuery}
+              <Icon
+                name="checkbox-marked-outline"
+                family="community"
+                size={20}
+                color={colors.text}
               />
-            </View>
-            <TouchableOpacity
-              style={styles.settingsBtn}
-              onPress={() => navigation.navigate('Settings')}
-              hitSlop={8}>
-              <Icon name="settings" size={22} color={colors.text} />
             </TouchableOpacity>
           </View>
         </>
@@ -1034,12 +1054,24 @@ const createStyles = (colors: AppColors) =>
       width: '100%',
       alignSelf: 'center',
     },
+    heroHeader: {
+      backgroundColor: colors.accent,
+      paddingBottom: 16,
+      borderBottomLeftRadius: 28,
+      borderBottomRightRadius: 28,
+    },
+    heroTitle: {
+      fontSize: 24,
+      fontWeight: '700',
+      color: colors.white,
+      marginHorizontal: 16,
+      marginBottom: 12,
+    },
     searchRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 10,
       marginHorizontal: 16,
-      marginTop: 14,
     },
     searchBar: {
       flex: 1,
@@ -1049,48 +1081,29 @@ const createStyles = (colors: AppColors) =>
       paddingHorizontal: 14,
       height: 46,
       borderRadius: 14,
-      backgroundColor: colors.surface,
+      backgroundColor: 'rgba(255,255,255,0.16)',
       borderWidth: 1,
-      borderColor: colors.border,
-      elevation: 1,
-      shadowColor: colors.black,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.06,
-      shadowRadius: 3,
+      borderColor: 'rgba(255,255,255,0.25)',
     },
     searchInput: {
       flex: 1,
       fontSize: 14,
-      color: colors.text,
+      color: colors.white,
       padding: 0,
     },
-    settingsBtn: {
-      width: 46,
-      height: 46,
-      borderRadius: 14,
-      alignItems: 'center',
-      justifyContent: 'center',
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      elevation: 1,
-      shadowColor: colors.black,
-      shadowOffset: {width: 0, height: 1},
-      shadowOpacity: 0.06,
-      shadowRadius: 3,
-    },
-    titleRow: {
+    countRow: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 10,
       marginHorizontal: 16,
-      marginBottom: 14,
+      marginTop: 16,
+      marginBottom: 6,
     },
-    titleText: {
+    countText: {
       flex: 1,
-      fontSize: 24,
+      fontSize: 14,
       fontWeight: '700',
-      color: colors.text,
+      color: colors.textMuted,
     },
     sectionIconBtn: {
       width: 34,
