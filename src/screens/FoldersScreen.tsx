@@ -1,6 +1,7 @@
 import React, {useCallback, useEffect, useMemo, useState} from 'react';
 import {
   ActivityIndicator,
+  FlatList,
   SectionList,
   RefreshControl,
   StyleSheet,
@@ -9,6 +10,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import Share from 'react-native-share';
 import Alert from '../utils/customAlert';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -35,7 +37,7 @@ import {getThumbnail} from '../services/nativeImageFilter';
 import {isGoogleDriveSignedIn} from '../services/googleDrive';
 import {mapWithConcurrency} from '../utils/concurrency';
 import {scanTimestampName} from '../utils/format';
-import {useResponsive} from '../utils/responsive';
+import {percentWidth, useResponsive} from '../utils/responsive';
 import {DocumentSummary, Folder} from '../types/models';
 
 type FolderRow = Folder & {docCount: number};
@@ -47,6 +49,7 @@ import {
 } from '../services/biometrics';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
+import DocumentCard from '../components/DocumentCard';
 import DocumentListRow from '../components/DocumentListRow';
 import FolderPickerModal from '../components/FolderPickerModal';
 import OptionSheet, {SheetOption} from '../components/OptionSheet';
@@ -65,10 +68,22 @@ type SortMode =
   | 'modified_asc';
 type FolderAction = 'move' | 'copy' | null;
 type BulkBusy = 'delete' | 'merge' | 'share' | 'copy' | 'move' | null;
+type ViewMode = 'grid' | 'list' | 'folder';
 
 type Section =
   | {key: 'folders'; title: string; data: FolderRow[]}
   | {key: 'files'; title: string; data: DocumentSummary[]};
+
+/** Own key, deliberately separate from Home's - a user may well want Home
+ * to stay on "list" (recents) while All Files stays organized by folder, or
+ * vice versa, so the two screens' view preferences don't fight each other. */
+const VIEW_MODE_KEY = 'allfiles_view_mode';
+
+const VIEW_OPTIONS = [
+  {key: 'grid', label: 'Grid', icon: 'grid-view'},
+  {key: 'list', label: 'List', icon: 'view-list'},
+  {key: 'folder', label: 'Folder View', icon: 'folder-open'},
+];
 
 const SORT_OPTIONS: SheetOption[] = [
   {
@@ -113,7 +128,8 @@ export default function FoldersScreen({navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
-  const {contentMaxWidth} = useResponsive();
+  const {contentMaxWidth, gridColumns} = useResponsive();
+  const cardWidthPercent = percentWidth(100 / gridColumns - 3);
   const [folders, setFolders] = useState<FolderRow[]>([]);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -121,6 +137,8 @@ export default function FoldersScreen({navigation}: Props) {
   const [contentMatchIds, setContentMatchIds] = useState<Set<string>>(
     new Set(),
   );
+  const [viewMode, setViewMode] = useState<ViewMode>('folder');
+  const [viewSheetVisible, setViewSheetVisible] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>('modified_desc');
   const [sortSheetVisible, setSortSheetVisible] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -175,6 +193,19 @@ export default function FoldersScreen({navigation}: Props) {
       load();
     }, [load]),
   );
+
+  useEffect(() => {
+    AsyncStorage.getItem(VIEW_MODE_KEY).then(saved => {
+      if (saved === 'grid' || saved === 'list' || saved === 'folder') {
+        setViewMode(saved);
+      }
+    });
+  }, []);
+
+  function applyView(next: string) {
+    setViewMode(next as ViewMode);
+    AsyncStorage.setItem(VIEW_MODE_KEY, next);
+  }
 
   // Full-text search: matches document *content* (OCR'd page text), unioned
   // with the plain in-memory name filter below. Debounced since (unlike the
@@ -636,6 +667,16 @@ export default function FoldersScreen({navigation}: Props) {
               <Icon name="create-new-folder" size={20} color={colors.text} />
             </TouchableOpacity>
             <TouchableOpacity
+              onPress={() => setViewSheetVisible(true)}
+              hitSlop={6}
+              style={styles.sectionIconBtn}>
+              <Icon
+                name={VIEW_OPTIONS.find(o => o.key === viewMode)!.icon}
+                size={20}
+                color={colors.text}
+              />
+            </TouchableOpacity>
+            <TouchableOpacity
               onPress={() => setSortSheetVisible(true)}
               hitSlop={6}
               style={styles.sectionIconBtn}>
@@ -693,6 +734,66 @@ export default function FoldersScreen({navigation}: Props) {
             <Text style={styles.emptyTitle}>No matches</Text>
             <Text style={styles.emptySubtitle}>Try a different search.</Text>
           </View>
+        ) : viewMode === 'grid' ? (
+          <FlatList
+            key={`grid-${gridColumns}`}
+            data={filteredSortedDocuments}
+            keyExtractor={item => item.id}
+            numColumns={gridColumns}
+            columnWrapperStyle={styles.gridRow}
+            contentContainerStyle={styles.list}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={[colors.accent]}
+                tintColor={colors.accent}
+              />
+            }
+            renderItem={({item, index}) => (
+              <DocumentCard
+                document={item}
+                index={index}
+                onPress={() => handleDocPress(item)}
+                onLongPress={() => handleDocLongPress(item)}
+                selectionMode={selectionMode}
+                selected={selectedIds.includes(item.id)}
+                widthPercent={cardWidthPercent}
+                showSyncStatus={driveConnected}
+                thumbnailUri={thumbnails[item.id]}
+              />
+            )}
+          />
+        ) : viewMode === 'list' ? (
+          <FlatList
+            key="list"
+            data={filteredSortedDocuments}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.list}
+            refreshControl={
+              <RefreshControl
+                refreshing={refreshing}
+                onRefresh={handleRefresh}
+                colors={[colors.accent]}
+                tintColor={colors.accent}
+              />
+            }
+            renderItem={({item, index}) => (
+              <DocumentListRow
+                document={item}
+                index={index}
+                onPress={() => handleDocPress(item)}
+                onLongPress={() => handleDocLongPress(item)}
+                selectionMode={selectionMode}
+                selected={selectedIds.includes(item.id)}
+                showSyncStatus={driveConnected}
+                thumbnailUri={thumbnails[item.id]}
+                onMore={
+                  selectionMode ? undefined : () => setMoreMenuDoc(item)
+                }
+              />
+            )}
+          />
         ) : (
           <SectionList
             sections={sections}
@@ -818,6 +919,15 @@ export default function FoldersScreen({navigation}: Props) {
         visible={folderAction !== null}
         onClose={() => setFolderAction(null)}
         onPick={handleFolderPicked}
+      />
+
+      <OptionSheet
+        visible={viewSheetVisible}
+        title="View"
+        options={VIEW_OPTIONS}
+        selectedKey={viewMode}
+        onSelect={applyView}
+        onClose={() => setViewSheetVisible(false)}
       />
 
       <OptionSheet
@@ -1007,6 +1117,9 @@ const createStyles = (colors: AppColors) =>
     list: {
       padding: 16,
       paddingBottom: 24,
+    },
+    gridRow: {
+      justifyContent: 'space-between',
     },
     selectionBar: {
       flexDirection: 'row',

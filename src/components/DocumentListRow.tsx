@@ -70,7 +70,7 @@ export default function DocumentListRow({
         <AppText style={styles.name} numberOfLines={1}>
           {document.name}
         </AppText>
-        <Text style={styles.meta} numberOfLines={1}>
+        <Text style={styles.meta} numberOfLines={2}>
           {document.pageCount} page{document.pageCount === 1 ? '' : 's'} ·{' '}
           {formatDate(document.updatedAt)} · {formatTime(document.updatedAt)} ·{' '}
           {formatBytes(document.totalSizeBytes)}
