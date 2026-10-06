@@ -1,4 +1,4 @@
-import React, {useMemo, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -39,6 +39,31 @@ export default function SignPageScreen({navigation, route}: Props) {
   const [showGuide, setShowGuide] = useState(true);
   const compositeRef = useRef<React.ComponentRef<typeof View>>(null);
   const startPos = useRef({x: 0, y: 0});
+  // Set right before a deliberate goBack() that follows a successful save,
+  // so the beforeRemove guard below doesn't also fire for that navigation.
+  const savedRef = useRef(false);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', e => {
+      if (!signatureUri || savedRef.current) {
+        return;
+      }
+      e.preventDefault();
+      Alert.alert(
+        'Discard signature?',
+        "You've drawn and positioned a signature but haven't applied it yet. Leaving now will lose it.",
+        [
+          {text: 'Keep Editing', style: 'cancel'},
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+        ],
+      );
+    });
+    return unsubscribe;
+  }, [navigation, signatureUri]);
 
   // `panResponder` below is created exactly once via useRef, so its
   // callbacks close over whatever `pos`/`sigWidth` was on that first render
@@ -136,6 +161,7 @@ export default function SignPageScreen({navigation, route}: Props) {
       const oldPath = filePath;
       await setPageFilePath(pageId, finalPath);
       await deletePageFile(oldPath);
+      savedRef.current = true;
       navigation.goBack();
     } catch (error) {
       Alert.alert('Save failed', 'Could not apply the signature to this page.');

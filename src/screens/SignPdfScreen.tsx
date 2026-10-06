@@ -1,4 +1,5 @@
-import React, {useMemo, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {useNavigation} from '@react-navigation/native';
 import {
   ActivityIndicator,
   Image,
@@ -33,6 +34,7 @@ export default function SignPdfScreen() {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation();
   const [step, setStep] = useState<Step>('pick');
   const [fileUri, setFileUri] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
@@ -51,6 +53,53 @@ export default function SignPdfScreen() {
   const [containerSize, setContainerSize] = useState({width: 0, height: 0});
   const [saving, setSaving] = useState(false);
   const startPos = useRef({x: 0, y: 0});
+
+  // Guards actual screen removal (hardware back, swipe back) - the in-screen
+  // "X" button on the position step is a separate local state reset, handled
+  // by handleClosePosition below since it never goes through react-navigation.
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', e => {
+      if (!signatureUri) {
+        return;
+      }
+      e.preventDefault();
+      Alert.alert(
+        'Discard signature?',
+        "You've drawn and positioned a signature but haven't applied it yet. Leaving now will lose it.",
+        [
+          {text: 'Keep Editing', style: 'cancel'},
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+        ],
+      );
+    });
+    return unsubscribe;
+  }, [navigation, signatureUri]);
+
+  function handleClosePosition() {
+    if (!signatureUri) {
+      setStep('choosePage');
+      return;
+    }
+    Alert.alert(
+      'Discard signature?',
+      "You've drawn and positioned a signature but haven't applied it yet. Leaving now will lose it.",
+      [
+        {text: 'Keep Editing', style: 'cancel'},
+        {
+          text: 'Discard',
+          style: 'destructive',
+          onPress: () => {
+            setSignatureUri(null);
+            setStep('choosePage');
+          },
+        },
+      ],
+    );
+  }
 
   // `panResponder` below is created exactly once via useRef, so its
   // callbacks close over whatever `pos`/`sigWidth` was on that first render
@@ -243,7 +292,7 @@ export default function SignPdfScreen() {
             <Icon name="replay" size={22} color={colors.white} />
           </TouchableOpacity>
           <Text style={styles.positionTitle}>Position Signature</Text>
-          <TouchableOpacity onPress={() => setStep('choosePage')} hitSlop={8}>
+          <TouchableOpacity onPress={handleClosePosition} hitSlop={8}>
             <Icon name="close" size={24} color={colors.white} />
           </TouchableOpacity>
         </View>

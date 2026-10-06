@@ -28,6 +28,7 @@ import {
   getBiometryLabel,
   isBiometricUnlockEnabled,
 } from '../services/biometrics';
+import {isAppLockEnabled, setAppLockEnabled} from '../services/appLock';
 import {clearExportsCache, getStorageUsageBytes} from '../services/fileStorage';
 import {formatBytes} from '../utils/format';
 import Icon from '../components/Icon';
@@ -80,6 +81,8 @@ export default function SettingsScreen({navigation}: Props) {
   const [backupStatus, setBackupStatus] = useState<string | null>(null);
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [restoreStatus, setRestoreStatus] = useState<string | null>(null);
+  const [appLockOn, setAppLockOn] = useState(false);
+  const [appLockBusy, setAppLockBusy] = useState(false);
 
   const load = useCallback(async () => {
     setPinIsSet(await hasPin());
@@ -87,6 +90,7 @@ export default function SettingsScreen({navigation}: Props) {
     setBiometryLabel(await getBiometryLabel());
     setBiometricEnabled(await isBiometricUnlockEnabled());
     setDriveUser(getSignedInGoogleUser());
+    setAppLockOn(await isAppLockEnabled());
   }, []);
 
   useFocusEffect(
@@ -175,6 +179,24 @@ export default function SettingsScreen({navigation}: Props) {
     }
     setBiometricBusy(false);
     load();
+  }
+
+  async function handleToggleAppLock(value: boolean) {
+    if (value && !pinIsSet) {
+      Alert.alert(
+        'No PIN set',
+        'Set a vault PIN first - it doubles as the whole-app PIN.',
+        [
+          {text: 'Cancel', style: 'cancel'},
+          {text: 'Set PIN', onPress: beginSetPin},
+        ],
+      );
+      return;
+    }
+    setAppLockBusy(true);
+    await setAppLockEnabled(value);
+    setAppLockOn(value);
+    setAppLockBusy(false);
   }
 
   async function handleConnectDrive() {
@@ -435,6 +457,16 @@ export default function SettingsScreen({navigation}: Props) {
             }}
           />
         )}
+        <Row
+          icon="shield-lock-outline"
+          family="community"
+          label="Lock app on open"
+          toggle={{
+            value: appLockOn,
+            onValueChange: handleToggleAppLock,
+            busy: appLockBusy,
+          }}
+        />
       </Section>
 
       <Section title="Storage">

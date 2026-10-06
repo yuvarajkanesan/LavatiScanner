@@ -31,6 +31,50 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent-filter>
+        <!-- Deep-link scheme used by the app icon's long-press shortcuts,
+             the Quick Settings tile, and the home-screen widget to jump
+             straight to an action (lavatiscanner://scan, .../idcard, ...)
+             instead of just opening to Home. -->
+        <intent-filter>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.DEFAULT" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="lavatiscanner" />
+        </intent-filter>
+        <meta-data
+          android:name="android.app.shortcuts"
+          android:resource="@xml/shortcuts" />
       </activity>
+
+      <!-- Quick Settings "Scan" tile - requires API 24+ (this app's own
+           minSdk), so no version gating needed here. -->
+      <service
+        android:name=".ScanTileService"
+        android:exported="true"
+        android:icon="@drawable/ic_shortcut_scan"
+        android:label="@string/shortcut_scan_short"
+        android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+        <intent-filter>
+            <action android:name="android.service.quicksettings.action.QS_TILE" />
+        </intent-filter>
+      </service>
+
+      <!-- Home-screen "One-Tap Scan" widget (react-native-android-widget).
+           All rendering/click handling lives in RNWidgetProvider (native
+           library) + src/widgets/ScanWidget.tsx (JS); `${applicationId}`
+           resolves to com.lavatiscanner.qa for the QA build so the click
+           broadcast matches at runtime regardless of build variant. -->
+      <receiver
+        android:name=".ScanWidgetProvider"
+        android:exported="false"
+        android:label="One-Tap Scan">
+        <intent-filter>
+            <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            <action android:name="${applicationId}.WIDGET_CLICK" />
+        </intent-filter>
+        <meta-data
+          android:name="android.appwidget.provider"
+          android:resource="@xml/scan_widget_info" />
+      </receiver>
     </application>
 </manifest>

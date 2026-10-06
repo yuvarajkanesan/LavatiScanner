@@ -1,8 +1,10 @@
-import React from 'react';
+import React, {useEffect, useRef} from 'react';
+import {Linking} from 'react-native';
 import {
   DarkTheme,
   DefaultTheme,
   NavigationContainer,
+  NavigationContainerRef,
 } from '@react-navigation/native';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {RootStackParamList} from './types';
@@ -32,12 +34,74 @@ import {useTheme} from '../theme/ThemeContext';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+/** Routes a `lavatiscanner://<path>` deep link (app-icon shortcuts, the
+ * Quick Settings tile, the home-screen widget) to the matching screen. */
+function navigateForDeepLink(
+  navRef: NavigationContainerRef<RootStackParamList>,
+  url: string,
+) {
+  const path = url.replace(/^lavatiscanner:\/\//, '').replace(/\/$/, '');
+  switch (path) {
+    case 'scan':
+      navRef.navigate('Scan', {folderId: null});
+      break;
+    case 'idcard':
+      navRef.navigate('Scan', {folderId: null, mode: 'idcard'});
+      break;
+    case 'import':
+      navRef.navigate('MainTabs', {
+        screen: 'Home',
+        params: {autoAction: 'import'},
+      });
+      break;
+    case 'search':
+      navRef.navigate('MainTabs', {
+        screen: 'Home',
+        params: {autoAction: 'search'},
+      });
+      break;
+  }
+}
+
 export default function RootNavigator() {
   const {colors, resolvedScheme} = useTheme();
   const navTheme = resolvedScheme === 'dark' ? DarkTheme : DefaultTheme;
+  const navRef = useRef<NavigationContainerRef<RootStackParamList>>(null);
+  // A deep link can arrive (cold-start URL, or the 'url' event) before the
+  // container finishes its first render - queued here and flushed from
+  // onReady instead of dropped.
+  const pendingUrlRef = useRef<string | null>(null);
+  const containerReadyRef = useRef(false);
+
+  useEffect(() => {
+    function handleUrl(url: string) {
+      if (!containerReadyRef.current || !navRef.current) {
+        pendingUrlRef.current = url;
+        return;
+      }
+      navigateForDeepLink(navRef.current, url);
+    }
+
+    Linking.getInitialURL().then(url => {
+      if (url) {
+        handleUrl(url);
+      }
+    });
+    const subscription = Linking.addEventListener('url', ({url}) => handleUrl(url));
+    return () => subscription.remove();
+  }, []);
 
   return (
     <NavigationContainer
+      ref={navRef}
+      onReady={() => {
+        containerReadyRef.current = true;
+        const pending = pendingUrlRef.current;
+        if (pending && navRef.current) {
+          pendingUrlRef.current = null;
+          navigateForDeepLink(navRef.current, pending);
+        }
+      }}
       theme={{
         ...navTheme,
         colors: {

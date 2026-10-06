@@ -1,2 +1,11 @@
 <resources>
+    <!-- App-icon long-press shortcuts (res/xml/shortcuts.xml) -->
+    <string name="shortcut_scan_short">Scan</string>
+    <string name="shortcut_scan_long">Scan document</string>
+    <string name="shortcut_idcard_short">ID card</string>
+    <string name="shortcut_idcard_long">Scan ID card</string>
+    <string name="shortcut_import_short">Import</string>
+    <string name="shortcut_import_long">Import files</string>
+    <string name="shortcut_search_short">Search</string>
+    <string name="shortcut_search_long">Search scans</string>
 </resources>

@@ -1,4 +1,4 @@
-import React, {useMemo, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -126,6 +126,31 @@ export default function MarkupPageScreen({navigation, route}: Props) {
   const [activeTool, setActiveTool] = useState<Tool>('pen');
   const [saving, setSaving] = useState(false);
   const compositeRef = useRef<React.ComponentRef<typeof View>>(null);
+  // Set right before a deliberate goBack() that follows a successful save,
+  // so the beforeRemove guard below doesn't also fire for that navigation.
+  const savedRef = useRef(false);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('beforeRemove', e => {
+      if (shapes.length === 0 || savedRef.current) {
+        return;
+      }
+      e.preventDefault();
+      Alert.alert(
+        'Discard markup?',
+        "You've drawn on this page but haven't applied it yet. Leaving now will lose it.",
+        [
+          {text: 'Keep Editing', style: 'cancel'},
+          {
+            text: 'Discard',
+            style: 'destructive',
+            onPress: () => navigation.dispatch(e.data.action),
+          },
+        ],
+      );
+    });
+    return unsubscribe;
+  }, [navigation, shapes.length]);
 
   // `panResponder` below is created exactly once via useRef, so reading
   // `activeColor`/`activeTool` directly inside its callbacks would close
@@ -291,6 +316,7 @@ export default function MarkupPageScreen({navigation, route}: Props) {
       const newPath = await persistPageImage(docId, composedUri);
       await deletePageFile(filePath);
       await setPageFilePath(pageId, newPath);
+      savedRef.current = true;
       navigation.goBack();
     } catch (error) {
       Alert.alert('Save failed', 'Could not save the markup on this page.');

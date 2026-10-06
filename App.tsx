@@ -9,6 +9,7 @@ import {GestureHandlerRootView} from 'react-native-gesture-handler';
 import {SafeAreaProvider} from 'react-native-safe-area-context';
 import RootNavigator from './src/navigation/RootNavigator';
 import ErrorBoundary from './src/components/ErrorBoundary';
+import AppLockGate from './src/components/AppLockGate';
 import {ScanSessionProvider} from './src/context/ScanSessionContext';
 import {ThemeProvider, useTheme} from './src/theme/ThemeContext';
 import {FontScaleProvider} from './src/theme/FontScaleContext';
@@ -41,7 +42,9 @@ export default function App(): React.JSX.Element {
           <ThemeProvider>
             <FontScaleProvider>
               <ScanSessionProvider>
-                <ThemedApp />
+                <AppLockGate>
+                  <ThemedApp />
+                </AppLockGate>
                 <TextPromptHost />
                 <CustomAlertHost />
               </ScanSessionProvider>

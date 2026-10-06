@@ -1,4 +1,4 @@
-import React, {useCallback, useEffect, useMemo, useState} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -131,7 +131,7 @@ const SORT_OPTIONS: SheetOption[] = [
 
 const SORT_MODE_KEYS: SortMode[] = SORT_OPTIONS.map(o => o.key as SortMode);
 
-export default function HomeScreen({navigation}: Props) {
+export default function HomeScreen({navigation, route}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const {gridColumns} = useResponsive();
@@ -168,6 +168,11 @@ export default function HomeScreen({navigation}: Props) {
     'import' | 'images' | null
   >(null);
   const [showTips, setShowTips] = useState(false);
+  // `any`-typed: RN 0.87's TextInput ref type doesn't line up cleanly with
+  // the Inter-font Metro shim's forwardRef wrapper for a plain instance
+  // ref here - only `.focus()` is needed, so the precise type isn't worth
+  // fighting.
+  const searchInputRef = useRef<any>(null);
 
   useEffect(() => {
     hasSeenTips().then(seen => {
@@ -176,6 +181,23 @@ export default function HomeScreen({navigation}: Props) {
       }
     });
   }, []);
+
+  // One-shot action requested by a deep link (app-icon shortcut, Quick
+  // Settings tile, widget) - consumed immediately via setParams so it
+  // doesn't re-fire the next time this tab is simply refocused.
+  useEffect(() => {
+    const action = route.params?.autoAction;
+    if (!action) {
+      return;
+    }
+    navigation.setParams({autoAction: undefined});
+    if (action === 'import') {
+      handleImportFilesTray();
+    } else if (action === 'search') {
+      searchInputRef.current?.focus();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.autoAction]);
 
   useEffect(() => {
     AsyncStorage.getItem(VIEW_MODE_KEY).then(saved => {
@@ -730,6 +752,7 @@ export default function HomeScreen({navigation}: Props) {
               <View style={styles.searchBar}>
                 <Icon name="search" size={20} color="rgba(255,255,255,0.75)" />
                 <TextInput
+                  ref={searchInputRef}
                   style={styles.searchInput}
                   placeholder="Search documents"
                   placeholderTextColor="rgba(255,255,255,0.75)"
@@ -825,13 +848,42 @@ export default function HomeScreen({navigation}: Props) {
         </View>
       ) : documents.length === 0 ? (
         <View style={styles.empty}>
-          <View style={styles.emptyIconWrap}>
-            <Icon name="document-scanner" size={36} color={colors.accent} />
+          <View style={styles.emptyIconWrapLarge}>
+            <Icon
+              name="line-scan"
+              family="community"
+              size={56}
+              color={colors.accent}
+            />
           </View>
           <Text style={styles.emptyTitle}>No documents yet</Text>
           <Text style={styles.emptySubtitle}>
-            Tap Smart Scan below to scan your first document.
+            Scan a document, or import a file or photo to get started.
           </Text>
+          <TouchableOpacity
+            style={styles.emptyPrimaryBtn}
+            onPress={handleNewScan}
+            activeOpacity={0.85}>
+            <Icon
+              name="line-scan"
+              family="community"
+              size={20}
+              color={colors.white}
+            />
+            <Text style={styles.emptyPrimaryBtnText}>Scan document</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.emptySecondaryBtn}
+            onPress={handleImportFilesTray}
+            activeOpacity={0.7}>
+            <Icon
+              name="file-import-outline"
+              family="community"
+              size={18}
+              color={colors.accent}
+            />
+            <Text style={styles.emptySecondaryBtnText}>Import files</Text>
+          </TouchableOpacity>
         </View>
       ) : filteredDocuments.length === 0 ? (
         <View style={styles.empty}>
@@ -932,10 +984,11 @@ export default function HomeScreen({navigation}: Props) {
                   }
                 }}>
                 <Icon
-                  name={section.folderId === null ? 'folder-off' : 'folder'}
+                  name="folder-outline"
+                  family="community"
                   size={18}
                   color={
-                    section.folderId === null ? colors.textMuted : colors.gold
+                    section.folderId === null ? colors.textMuted : colors.accent
                   }
                 />
                 <Text style={styles.sectionHeaderText}>{section.title}</Text>
@@ -969,18 +1022,33 @@ export default function HomeScreen({navigation}: Props) {
               </TouchableOpacity>
             );
           }}
-          renderItem={({item, index}) => (
-            <DocumentListRow
-              document={item}
-              index={index}
-              onPress={() => handleCardPress(item)}
-              onLongPress={() => handleCardLongPress(item)}
-              selectionMode={selectionMode}
-              selected={selectedIds.includes(item.id)}
-              showSyncStatus={driveConnected}
-              thumbnailUri={thumbnails[item.id]}
-            />
-          )}
+          renderItem={({item, index, section}) => {
+            const row = (
+              <DocumentListRow
+                document={item}
+                index={index}
+                onPress={() => handleCardPress(item)}
+                onLongPress={() => handleCardLongPress(item)}
+                selectionMode={selectionMode}
+                selected={selectedIds.includes(item.id)}
+                showSyncStatus={driveConnected}
+                thumbnailUri={thumbnails[item.id]}
+                onMore={
+                  selectionMode ? undefined : () => setMoreMenuDoc(item)
+                }
+              />
+            );
+            // Nests a document under its folder's header with a thin
+            // connector line - unfiled ("No Folder") documents render flat.
+            return section.folderId !== null ? (
+              <View style={styles.folderDocWrap}>
+                <View style={styles.folderDocLine} />
+                <View style={styles.folderDocRow}>{row}</View>
+              </View>
+            ) : (
+              row
+            );
+          }}
         />
       )}
       </View>
@@ -1287,6 +1355,20 @@ const createStyles = (colors: AppColors) =>
       fontWeight: '600',
       color: colors.textMuted,
     },
+    folderDocWrap: {
+      flexDirection: 'row',
+      alignItems: 'stretch',
+    },
+    folderDocLine: {
+      width: 2,
+      borderRadius: 1,
+      backgroundColor: colors.border,
+      marginRight: 10,
+      marginBottom: 10,
+    },
+    folderDocRow: {
+      flex: 1,
+    },
     sectionHeaderDeleteBtn: {
       padding: 4,
     },
@@ -1305,6 +1387,15 @@ const createStyles = (colors: AppColors) =>
       justifyContent: 'center',
       marginBottom: 16,
     },
+    emptyIconWrapLarge: {
+      width: 140,
+      height: 140,
+      borderRadius: 70,
+      backgroundColor: colors.accentMuted,
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 20,
+    },
     emptyTitle: {
       fontSize: 17,
       fontWeight: '700',
@@ -1315,6 +1406,36 @@ const createStyles = (colors: AppColors) =>
       fontSize: 14,
       color: colors.textMuted,
       textAlign: 'center',
+    },
+    emptyPrimaryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: 24,
+      paddingHorizontal: 28,
+      height: 50,
+      borderRadius: 25,
+      backgroundColor: colors.accent,
+    },
+    emptyPrimaryBtnText: {
+      fontSize: 15,
+      fontWeight: '700',
+      color: colors.white,
+    },
+    emptySecondaryBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      marginTop: 14,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+    },
+    emptySecondaryBtnText: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: colors.accent,
     },
     bulkBar: {
       flexDirection: 'row',

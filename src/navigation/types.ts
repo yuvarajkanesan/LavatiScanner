@@ -7,7 +7,10 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {IdCardSubMode} from '../constants/idCardModes';
 
 export type MainTabParamList = {
-  Home: undefined;
+  // `autoAction` drives a one-shot behavior on arrival (opening the import
+  // sheet or focusing search) - set by the app-icon shortcuts, Quick
+  // Settings tile, and home-screen widget's deep links.
+  Home: {autoAction?: 'import' | 'search'} | undefined;
   AllFiles: undefined;
   Tools: undefined;
   Settings: undefined;

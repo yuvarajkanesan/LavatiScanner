@@ -70,9 +70,16 @@ type FolderAction = 'move' | 'copy' | null;
 type BulkBusy = 'delete' | 'merge' | 'share' | 'copy' | 'move' | null;
 type ViewMode = 'grid' | 'list' | 'folder';
 
-type Section =
-  | {key: 'folders'; title: string; data: FolderRow[]}
-  | {key: 'files'; title: string; data: DocumentSummary[]};
+interface FolderSection {
+  title: string;
+  folderId: string | null;
+  folder: FolderRow | null;
+  data: DocumentSummary[];
+}
+
+/** Sentinel key for the "No Folder" section in collapse-state tracking,
+ * since its folderId is null - mirrors Home's folder-grouped list. */
+const ROOT_SECTION_KEY = '__root__';
 
 /** Own key, deliberately separate from Home's - a user may well want Home
  * to stay on "list" (recents) while All Files stays organized by folder, or
@@ -160,6 +167,14 @@ export default function FoldersScreen({navigation}: Props) {
   const [biometryLabel, setBiometryLabel] = useState<string | undefined>();
   const [thumbnails, setThumbnails] = useState<Record<string, string>>({});
   const [driveConnected, setDriveConnected] = useState(false);
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
+    new Set(),
+  );
+  // Folders unlocked via PIN/biometric this session - avoids re-prompting
+  // every time a section is expanded/collapsed after the first unlock.
+  const [unlockedFolderIds, setUnlockedFolderIds] = useState<Set<string>>(
+    new Set(),
+  );
 
   const resolveThumbnails = useCallback(async (docs: DocumentSummary[]) => {
     const targets = docs.filter(d => d.thumbnailPath);
@@ -180,17 +195,21 @@ export default function FoldersScreen({navigation}: Props) {
   }, []);
 
   const load = useCallback(async () => {
-    const [folderList, rootDocs] = await Promise.all([
+    // Fetches every document, not just root-level ones - the List/Grid view
+    // modes are meant to be a flat view of everything regardless of folder,
+    // unlike Folder View, which represents a document's folder membership
+    // via the folder row itself instead of listing it twice.
+    const [folderList, allDocs] = await Promise.all([
       listFoldersWithDocCounts(),
-      listDocuments(null),
+      listDocuments('all'),
     ]);
     setFolders(folderList);
-    setDocuments(rootDocs);
+    setDocuments(allDocs);
     setDriveConnected(isGoogleDriveSignedIn());
     setBiometricEnabled(await isBiometricUnlockEnabled());
     setBiometryLabel((await getBiometryLabel()) ?? undefined);
     setLoading(false);
-    resolveThumbnails(rootDocs);
+    resolveThumbnails(allDocs);
   }, [resolveThumbnails]);
 
   useFocusEffect(
@@ -245,18 +264,13 @@ export default function FoldersScreen({navigation}: Props) {
     setSortMode(next as SortMode);
   }
 
-  const filteredFolders = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return q ? folders.filter(f => f.name.toLowerCase().includes(q)) : folders;
-  }, [folders, query]);
-
-  const filteredSortedDocuments = useMemo(() => {
+  function filterSortDocuments(docs: DocumentSummary[]): DocumentSummary[] {
     const q = query.trim().toLowerCase();
     const base = q
-      ? documents.filter(
+      ? docs.filter(
           d => d.name.toLowerCase().includes(q) || contentMatchIds.has(d.id),
         )
-      : documents;
+      : docs;
     const sorted = [...base];
     switch (sortMode) {
       case 'name_asc':
@@ -279,22 +293,61 @@ export default function FoldersScreen({navigation}: Props) {
         break;
     }
     return sorted;
-  }, [documents, query, sortMode, contentMatchIds]);
+  }
 
-  const sections = useMemo<Section[]>(() => {
-    const result: Section[] = [];
-    if (filteredFolders.length > 0) {
-      result.push({key: 'folders', title: 'Folders', data: filteredFolders});
+  // List/Grid show every document regardless of folder.
+  const filteredSortedDocuments = useMemo(
+    () => filterSortDocuments(documents),
+    [documents, query, sortMode, contentMatchIds],
+  );
+
+  // Folder View groups every matching document under its folder - same
+  // model as Home's folder-grouped list, including that a folder with no
+  // matching documents (empty, or none matching the current search) simply
+  // doesn't appear rather than showing as an empty section.
+  const folderSections = useMemo<FolderSection[]>(() => {
+    const byFolder = new Map<string | null, DocumentSummary[]>();
+    for (const doc of filteredSortedDocuments) {
+      const key = doc.folderId;
+      if (!byFolder.has(key)) {
+        byFolder.set(key, []);
+      }
+      byFolder.get(key)!.push(doc);
     }
-    if (filteredSortedDocuments.length > 0) {
-      result.push({
-        key: 'files',
-        title: 'Files',
-        data: filteredSortedDocuments,
-      });
+    const result: FolderSection[] = [];
+    for (const folder of folders) {
+      const docs = byFolder.get(folder.id);
+      if (docs?.length) {
+        result.push({title: folder.name, folderId: folder.id, folder, data: docs});
+      }
+    }
+    const rootDocs = byFolder.get(null);
+    if (rootDocs?.length) {
+      result.push({title: 'No Folder', folderId: null, folder: null, data: rootDocs});
     }
     return result;
-  }, [filteredFolders, filteredSortedDocuments]);
+  }, [filteredSortedDocuments, folders]);
+
+  const displaySections = useMemo(
+    () =>
+      folderSections.map(section =>
+        collapsedFolders.has(section.folderId ?? ROOT_SECTION_KEY)
+          ? {...section, data: []}
+          : section,
+      ),
+    [folderSections, collapsedFolders],
+  );
+
+  // Collapsed sections have their `data` zeroed out above for SectionList,
+  // so each header's count is looked up here instead (from the
+  // un-collapsed folderSections) rather than read off section.data.length.
+  const sectionCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const section of folderSections) {
+      map.set(section.folderId ?? ROOT_SECTION_KEY, section.data.length);
+    }
+    return map;
+  }, [folderSections]);
 
   const selectedDocuments = useMemo(
     () => documents.filter(d => selectedIds.includes(d.id)),
@@ -309,15 +362,38 @@ export default function FoldersScreen({navigation}: Props) {
     }
   }
 
-  async function handleOpenFolder(folder: Folder) {
-    if (!folder.isLocked) {
-      navigation.navigate('FolderDetail', {folderId: folder.id});
+  function toggleFolderCollapsed(folderId: string | null) {
+    const key = folderId ?? ROOT_SECTION_KEY;
+    setCollapsedFolders(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }
+
+  /** Tapping a folder section header expands/collapses it inline (matching
+   * Home's folder-grouped list) - locked folders still gate behind
+   * PIN/biometric before their documents become visible, same protection
+   * the old tap-to-navigate flow had, just re-targeted at "reveal the
+   * section" instead of "open a new screen". */
+  async function handleToggleFolderSection(folder: Folder) {
+    if (!folder.isLocked || unlockedFolderIds.has(folder.id)) {
+      toggleFolderCollapsed(folder.id);
       return;
     }
     if (await isBiometricUnlockEnabled()) {
       const ok = await unlockWithBiometrics();
       if (ok) {
-        navigation.navigate('FolderDetail', {folderId: folder.id});
+        setUnlockedFolderIds(prev => new Set(prev).add(folder.id));
+        setCollapsedFolders(prev => {
+          const next = new Set(prev);
+          next.delete(folder.id);
+          return next;
+        });
         return;
       }
     }
@@ -333,7 +409,12 @@ export default function FoldersScreen({navigation}: Props) {
     if (ok) {
       const folder = pendingFolder;
       setPendingFolder(null);
-      navigation.navigate('FolderDetail', {folderId: folder.id});
+      setUnlockedFolderIds(prev => new Set(prev).add(folder.id));
+      setCollapsedFolders(prev => {
+        const next = new Set(prev);
+        next.delete(folder.id);
+        return next;
+      });
     }
   }
 
@@ -345,7 +426,12 @@ export default function FoldersScreen({navigation}: Props) {
     if (ok) {
       const folder = pendingFolder;
       setPendingFolder(null);
-      navigation.navigate('FolderDetail', {folderId: folder.id});
+      setUnlockedFolderIds(prev => new Set(prev).add(folder.id));
+      setCollapsedFolders(prev => {
+        const next = new Set(prev);
+        next.delete(folder.id);
+        return next;
+      });
     } else {
       setPinError('Incorrect PIN, try again.');
     }
@@ -639,8 +725,19 @@ export default function FoldersScreen({navigation}: Props) {
 
   const totalCount = folders.length + documents.length;
   const isEmpty = !loading && totalCount === 0;
+  // What counts as "no matches" depends on which dataset the current view
+  // mode actually renders - Folder View groups by folder (`folderSections`),
+  // List/Grid show every document flat (`filteredSortedDocuments`). Checking
+  // the wrong one could show an empty state over real results (or vice
+  // versa) whenever a search matches something only the other view would
+  // display.
   const noMatches =
-    !loading && totalCount > 0 && sections.length === 0 && query.trim() !== '';
+    !loading &&
+    totalCount > 0 &&
+    query.trim() !== '' &&
+    (viewMode === 'folder'
+      ? folderSections.length === 0
+      : filteredSortedDocuments.length === 0);
 
   return (
     <View style={styles.container}>
@@ -681,7 +778,7 @@ export default function FoldersScreen({navigation}: Props) {
 
           <View style={styles.countRow}>
             <Text style={styles.countText}>
-              {totalCount} file{totalCount === 1 ? '' : 's'}
+              {documents.length} file{documents.length === 1 ? '' : 's'}
             </Text>
             <TouchableOpacity
               onPress={handleCreateFolder}
@@ -816,7 +913,8 @@ export default function FoldersScreen({navigation}: Props) {
           />
         ) : (
           <SectionList
-            sections={sections}
+            key="folder"
+            sections={displaySections}
             keyExtractor={item => item.id}
             contentContainerStyle={styles.list}
             stickySectionHeadersEnabled={false}
@@ -828,74 +926,75 @@ export default function FoldersScreen({navigation}: Props) {
                 tintColor={colors.accent}
               />
             }
-            renderSectionHeader={({section}) =>
-              sections.length > 1 ? (
-                <Text style={styles.sectionHeaderText}>
-                  {section.title} ({section.data.length})
-                </Text>
-              ) : null
-            }
-            renderItem={({item, index, section}) =>
-              section.key === 'folders' ? (
+            renderSectionHeader={({section}) => {
+              const collapsed = collapsedFolders.has(
+                section.folderId ?? ROOT_SECTION_KEY,
+              );
+              return (
                 <TouchableOpacity
-                  style={styles.row}
-                  onPress={() => handleOpenFolder(item as FolderRow)}
-                  onLongPress={() => handleFolderLongPress(item as FolderRow)}
-                  activeOpacity={0.7}>
-                  <View
-                    style={[
-                      styles.folderIconWrap,
-                      {
-                        backgroundColor: `${
-                          colors.funPalette[index % colors.funPalette.length]
-                        }26`,
-                      },
-                    ]}>
-                    <Icon
-                      name="folder"
-                      size={26}
-                      color={colors.funPalette[index % colors.funPalette.length]}
-                    />
-                    {(item as FolderRow).isLocked && (
-                      <View style={styles.lockBadge}>
-                        <Icon name="lock" size={11} color={colors.white} />
-                      </View>
-                    )}
-                  </View>
-                  <View style={styles.folderTextWrap}>
-                    <Text style={styles.folderName} numberOfLines={1}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.folderCount}>
-                      {(item as FolderRow).docCount} document
-                      {(item as FolderRow).docCount === 1 ? '' : 's'}
-                    </Text>
-                  </View>
-                  <Icon name="chevron-right" size={22} color={colors.textMuted} />
-                </TouchableOpacity>
-              ) : (
-                <DocumentListRow
-                  document={item as unknown as DocumentSummary}
-                  index={index}
+                  style={styles.sectionHeader}
+                  activeOpacity={0.7}
                   onPress={() =>
-                    handleDocPress(item as unknown as DocumentSummary)
+                    section.folder
+                      ? handleToggleFolderSection(section.folder)
+                      : toggleFolderCollapsed(null)
                   }
-                  onLongPress={() =>
-                    handleDocLongPress(item as unknown as DocumentSummary)
-                  }
+                  onLongPress={() => {
+                    if (section.folder) {
+                      handleFolderLongPress(section.folder);
+                    }
+                  }}>
+                  <Icon
+                    name="folder-outline"
+                    family="community"
+                    size={18}
+                    color={
+                      section.folderId === null ? colors.textMuted : colors.accent
+                    }
+                  />
+                  <Text style={styles.sectionHeaderText}>{section.title}</Text>
+                  {section.folder?.isLocked && (
+                    <Icon name="lock" size={14} color={colors.textMuted} />
+                  )}
+                  <Text style={styles.sectionHeaderCount}>
+                    {sectionCounts.get(section.folderId ?? ROOT_SECTION_KEY) ?? 0}
+                  </Text>
+                  <Icon
+                    name={collapsed ? 'chevron-right' : 'expand-more'}
+                    size={20}
+                    color={colors.textMuted}
+                  />
+                </TouchableOpacity>
+              );
+            }}
+            renderItem={({item, index, section}) => {
+              const row = (
+                <DocumentListRow
+                  document={item}
+                  index={index}
+                  onPress={() => handleDocPress(item)}
+                  onLongPress={() => handleDocLongPress(item)}
                   selectionMode={selectionMode}
                   selected={selectedIds.includes(item.id)}
                   showSyncStatus={driveConnected}
                   thumbnailUri={thumbnails[item.id]}
                   onMore={
-                    selectionMode
-                      ? undefined
-                      : () =>
-                          setMoreMenuDoc(item as unknown as DocumentSummary)
+                    selectionMode ? undefined : () => setMoreMenuDoc(item)
                   }
                 />
-              )
-            }
+              );
+              // Nests a document under its folder's header with a thin
+              // connector line, same as Home's folder-grouped list -
+              // unfiled ("No Folder") documents render flat instead.
+              return section.folderId !== null ? (
+                <View style={styles.folderDocWrap}>
+                  <View style={styles.folderDocLine} />
+                  <View style={styles.folderDocRow}>{row}</View>
+                </View>
+              ) : (
+                row
+              );
+            }}
           />
         )}
       </View>
@@ -1115,14 +1214,37 @@ const createStyles = (colors: AppColors) =>
       borderWidth: 1,
       borderColor: colors.border,
     },
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingVertical: 8,
+      marginTop: 6,
+    },
     sectionHeaderText: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: '700',
+      color: colors.text,
+    },
+    sectionHeaderCount: {
       fontSize: 12,
-      fontWeight: '800',
-      letterSpacing: 0.4,
+      fontWeight: '600',
       color: colors.textMuted,
-      textTransform: 'uppercase',
-      marginBottom: 8,
-      marginTop: 4,
+    },
+    folderDocWrap: {
+      flexDirection: 'row',
+      alignItems: 'stretch',
+    },
+    folderDocLine: {
+      width: 2,
+      borderRadius: 1,
+      backgroundColor: colors.border,
+      marginRight: 10,
+      marginBottom: 10,
+    },
+    folderDocRow: {
+      flex: 1,
     },
     listArea: {
       flex: 1,
@@ -1153,53 +1275,6 @@ const createStyles = (colors: AppColors) =>
       fontSize: 13,
       fontWeight: '600',
       color: colors.accent,
-    },
-    row: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      backgroundColor: colors.surface,
-      borderWidth: 1,
-      borderColor: colors.border,
-      borderRadius: 10,
-      paddingVertical: 14,
-      paddingHorizontal: 14,
-      marginBottom: 10,
-    },
-    folderIconWrap: {
-      width: 46,
-      height: 46,
-      borderRadius: 23,
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginRight: 14,
-    },
-    lockBadge: {
-      position: 'absolute',
-      right: -4,
-      bottom: -4,
-      width: 16,
-      height: 16,
-      borderRadius: 8,
-      backgroundColor: colors.accent,
-      alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1.5,
-      borderColor: colors.surface,
-    },
-    folderTextWrap: {
-      flex: 1,
-      marginRight: 8,
-    },
-    folderCount: {
-      marginTop: 2,
-      fontSize: 12,
-      color: colors.textMuted,
-    },
-    folderName: {
-      fontSize: 15,
-      fontWeight: '600',
-      color: colors.text,
-      flexShrink: 1,
     },
     empty: {
       flex: 1,

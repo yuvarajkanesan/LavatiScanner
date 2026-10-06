@@ -44,6 +44,7 @@ import {
   rotateImageFile90,
 } from '../services/pdfExport';
 import {recognizeTextFromImage} from '../services/ocr';
+import {buildDocxFromPages} from '../services/docxExport';
 import {getThumbnail} from '../services/nativeImageFilter';
 import {mapWithConcurrency} from '../utils/concurrency';
 import {Document, Page} from '../types/models';
@@ -153,6 +154,13 @@ const MORE_ACTIONS: SheetOption[] = [
     icon: f.editPdf.icon,
     family: f.editPdf.family,
     color: f.editPdf.color,
+  },
+  {
+    key: 'exportWord',
+    label: 'Export to Word',
+    icon: f.exportWord.icon,
+    family: f.exportWord.family,
+    color: f.exportWord.color,
   },
   {
     key: 'email',
@@ -266,6 +274,7 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     | 'sharePdf'
     | 'shareImage'
     | 'editPdf'
+    | 'exportWord'
     | 'email'
     | 'duplicate'
     | 'move'
@@ -812,6 +821,28 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     }
   }
 
+  async function handleExportWord() {
+    if (pages.length === 0 || !doc) {
+      return;
+    }
+    try {
+      setMoreBusy('exportWord');
+      const docxPath = await buildDocxFromPages(pages, doc.name);
+      await Share.open({
+        url: `file://${docxPath}`,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        failOnCancel: false,
+      });
+    } catch (error) {
+      Alert.alert(
+        'Export failed',
+        'Could not export this document to Word.',
+      );
+    } finally {
+      setMoreBusy(null);
+    }
+  }
+
   async function handleShareDocumentImages() {
     if (pages.length === 0) {
       return;
@@ -920,6 +951,9 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
         break;
       case 'editPdf':
         handleEditAsPdf();
+        break;
+      case 'exportWord':
+        handleExportWord();
         break;
       case 'email':
         handleShareDocumentEmail();

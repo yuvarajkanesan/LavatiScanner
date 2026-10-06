@@ -24,6 +24,7 @@ export const documentFeatureIcons: Record<
   | 'note'
   | 'pageName'
   | 'editPdf'
+  | 'exportWord'
   | 'rotate'
   | 'rotateLeft'
   | 'collage'
@@ -66,6 +67,7 @@ export const documentFeatureIcons: Record<
     family: 'community',
     color: '#6366F1',
   },
+  exportWord: {icon: 'file-word-outline', family: 'community', color: '#2B579A'},
   rotate: {icon: 'rotate-right', family: 'community', color: '#0891B2'},
   rotateLeft: {icon: 'rotate-left', family: 'community', color: '#0891B2'},
   collage: {icon: 'view-grid-outline', family: 'community', color: '#F97316'},

@@ -236,6 +236,17 @@ export default function CaptureScreen({navigation, route}: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 
+  // A deep link (app shortcut, Quick Settings tile, home-screen widget) can
+  // retarget this screen while it's already open — the `mode` state above
+  // only picks up route.params.mode once, at the initial mount, so re-sync
+  // it whenever a fresh mode arrives on an already-mounted instance.
+  useEffect(() => {
+    if (route.params?.mode && route.params.mode !== mode) {
+      setMode(route.params.mode);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.mode]);
+
   function cycleFlash() {
     setFlash(prev =>
       prev === 'off' ? 'auto' : prev === 'auto' ? 'on' : 'off',
