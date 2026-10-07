@@ -6,7 +6,8 @@ import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 import { DocumentSummary } from '../types/models';
 import { formatBytes, formatDate } from '../utils/format';
-import { isDocumentSynced } from '../services/driveBackup';
+import SyncStatusIcon from './SyncStatusIcon';
+import { useDocumentSyncState } from '../services/syncStatus';
 
 interface Props {
   document: DocumentSummary;
@@ -43,7 +44,7 @@ export default function DocumentListRow({
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const synced = isDocumentSynced(document);
+  const syncState = useDocumentSyncState(document);
   return (
     <TouchableOpacity
       style={[styles.row, selected && styles.rowSelected]}
@@ -97,12 +98,7 @@ export default function DocumentListRow({
       ) : (
         <>
           {showSyncStatus && !selectionMode && (
-            <Icon
-              name={synced ? 'cloud-done' : 'cloud-queue'}
-              size={18}
-              color={synced ? colors.success : colors.textMuted}
-              style={styles.syncIcon}
-            />
+            <SyncStatusIcon state={syncState} size={20} style={styles.syncIcon} />
           )}
           {!selectionMode && (
             <Icon name="chevron-right" size={22} color={colors.textMuted} />

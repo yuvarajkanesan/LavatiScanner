@@ -12,6 +12,9 @@ import {renderFilterPreview} from '../services/nativeImageFilter';
 interface Props {
   uri: string;
   filter: FilterType;
+  /** Longest side (px) of the baked preview - raise it for the one large
+   * on-screen preview so it isn't upscaled from the 640px filmstrip size. */
+  maxDimension?: number;
   style?: StyleProp<ImageStyle>;
 }
 
@@ -22,7 +25,7 @@ interface Props {
  * view as solid black, so filtered previews go through the same
  * always-correct native path as the final saved page.
  */
-export default function FilteredImage({uri, filter, style}: Props) {
+export default function FilteredImage({uri, filter, style, maxDimension}: Props) {
   const [displayUri, setDisplayUri] = useState<string | null>(
     filter === 'original' ? uri : null,
   );
@@ -34,7 +37,7 @@ export default function FilteredImage({uri, filter, style}: Props) {
       return;
     }
     setDisplayUri(null);
-    renderFilterPreview(uri, filter)
+    renderFilterPreview(uri, filter, maxDimension)
       .then(result => {
         if (!cancelled) {
           setDisplayUri(result);
@@ -54,7 +57,7 @@ export default function FilteredImage({uri, filter, style}: Props) {
     return () => {
       cancelled = true;
     };
-  }, [uri, filter]);
+  }, [uri, filter, maxDimension]);
 
   if (!displayUri) {
     return (

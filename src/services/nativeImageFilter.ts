@@ -26,6 +26,34 @@ async function ensureCacheDir(): Promise<void> {
   return cacheDirReady;
 }
 
+
+/**
+ * Turns an image URI into a plain filesystem path the native module can open.
+ * URIs coming from `Uri.fromFile(...)` (e.g. react-native-pdf-thumbnail's page
+ * renders) are URL-encoded - a space becomes `%20` - but the native side opens
+ * the path literally, so an encoded path fails with ENOENT and the filter
+ * silently falls back to the unfiltered image. Only decodes when the literal
+ * path doesn't exist, so real filenames containing '%' keep working.
+ */
+async function resolveLocalPath(uri: string): Promise<string> {
+  const stripped = uri.replace('file://', '');
+  if (!/%[0-9A-Fa-f]{2}/.test(stripped)) {
+    return stripped;
+  }
+  if (await RNFS.exists(stripped)) {
+    return stripped;
+  }
+  try {
+    const decoded = decodeURIComponent(stripped);
+    if (await RNFS.exists(decoded)) {
+      return decoded;
+    }
+  } catch {
+    // malformed escape sequence - fall through to the literal path
+  }
+  return stripped;
+}
+
 /** Cheap non-cryptographic string hash, good enough for a cache filename. */
 function hash(input: string): string {
   let h = 0;
@@ -45,14 +73,21 @@ function hash(input: string): string {
 export async function renderFilterPreview(
   sourceUri: string,
   filter: FilterType,
+  maxDimension: number = PREVIEW_MAX_DIMENSION,
 ): Promise<string> {
   if (filter === 'original') {
     return sourceUri;
   }
 
   await ensureCacheDir();
-  const cleanSource = sourceUri.replace('file://', '');
-  const outputPath = `${CACHE_DIR}/${hash(`${cleanSource}:${filter}`)}.jpg`;
+  const cleanSource = await resolveLocalPath(sourceUri);
+  // Default-size previews keep their original cache key so existing cached
+  // files stay valid; larger renders get their own entry.
+  const cacheKey =
+    maxDimension === PREVIEW_MAX_DIMENSION
+      ? `${cleanSource}:${filter}`
+      : `${cleanSource}:${filter}:${maxDimension}`;
+  const outputPath = `${CACHE_DIR}/${hash(cacheKey)}.jpg`;
 
   const exists = await RNFS.exists(outputPath);
   if (exists) {
@@ -64,7 +99,7 @@ export async function renderFilterPreview(
     outputPath,
     filter,
     92,
-    PREVIEW_MAX_DIMENSION,
+    maxDimension,
   );
   return `file://${resultPath}`;
 }
@@ -82,7 +117,7 @@ export async function bakeFilterToFile(
   outputPath: string,
   quality: number = 97,
 ): Promise<string> {
-  const cleanSource = sourceUri.replace('file://', '');
+  const cleanSource = await resolveLocalPath(sourceUri);
   if (filter === 'original') {
     await RNFS.copyFile(cleanSource, outputPath);
     return outputPath;
@@ -109,7 +144,7 @@ export async function compressImage(
   outputPath: string,
   quality: number,
 ): Promise<string> {
-  const cleanSource = sourceUri.replace('file://', '');
+  const cleanSource = await resolveLocalPath(sourceUri);
   return ImageFilterModule.applyColorMatrix(
     cleanSource,
     outputPath,
@@ -141,7 +176,7 @@ const THUMBNAIL_QUALITY = 80;
  */
 export async function getThumbnail(sourcePath: string): Promise<string> {
   await ensureCacheDir();
-  const cleanSource = sourcePath.replace('file://', '');
+  const cleanSource = await resolveLocalPath(sourcePath);
   const outputPath = `${CACHE_DIR}/${hash(`${cleanSource}:thumb`)}.jpg`;
 
   const exists = await RNFS.exists(outputPath);
@@ -179,7 +214,7 @@ export async function cropRegion(
   heightRatio: number,
   quality: number = 92,
 ): Promise<string> {
-  const cleanSource = sourceUri.replace('file://', '');
+  const cleanSource = await resolveLocalPath(sourceUri);
   const resultPath = await ImageFilterModule.cropRegion(
     cleanSource,
     outputPath,
@@ -207,7 +242,7 @@ export interface QuadCorners {
 export async function detectDocumentCorners(
   sourceUri: string,
 ): Promise<QuadCorners | null> {
-  const cleanSource = sourceUri.replace('file://', '');
+  const cleanSource = await resolveLocalPath(sourceUri);
   const flat: number[] | null = await ImageFilterModule.detectDocumentCorners(
     cleanSource,
   );
@@ -234,7 +269,7 @@ export async function warpPerspective(
   outputPath: string,
   quality: number = 92,
 ): Promise<string> {
-  const cleanSource = sourceUri.replace('file://', '');
+  const cleanSource = await resolveLocalPath(sourceUri);
   const flatCorners = [
     corners.topLeft.x,
     corners.topLeft.y,
@@ -251,4 +286,49 @@ export async function warpPerspective(
     flatCorners,
     quality,
   );
+}
+
+const PREVIEW_CACHE_MAX_BYTES = 40 * 1024 * 1024;
+const TEMP_FILE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+const TEMP_FILE_PATTERN = /(pdfpage_hd_|-thumbnail-|pdf_edit_|drive_restore_)/;
+
+/**
+ * Keeps the cache from growing without bound. Filter previews are cheap to
+ * regenerate, so the oldest are dropped once the folder passes ~40 MB; the
+ * temporary page renders the PDF editor leaves in the cache root are deleted
+ * after a day. Best-effort and run once at startup - it never throws.
+ */
+export async function pruneCaches(): Promise<void> {
+  try {
+    if (await RNFS.exists(CACHE_DIR)) {
+      const files = (await RNFS.readDir(CACHE_DIR)).filter(f => f.isFile());
+      let total = files.reduce((sum, f) => sum + Number(f.size), 0);
+      if (total > PREVIEW_CACHE_MAX_BYTES) {
+        const oldestFirst = [...files].sort(
+          (a, b) => (a.mtime?.getTime() ?? 0) - (b.mtime?.getTime() ?? 0),
+        );
+        for (const file of oldestFirst) {
+          if (total <= PREVIEW_CACHE_MAX_BYTES) {
+            break;
+          }
+          await RNFS.unlink(file.path).catch(() => undefined);
+          total -= Number(file.size);
+        }
+      }
+    }
+
+    const cutoff = Date.now() - TEMP_FILE_MAX_AGE_MS;
+    const rootFiles = await RNFS.readDir(RNFS.CachesDirectoryPath);
+    for (const file of rootFiles) {
+      if (
+        file.isFile() &&
+        TEMP_FILE_PATTERN.test(file.name) &&
+        (file.mtime?.getTime() ?? Date.now()) < cutoff
+      ) {
+        await RNFS.unlink(file.path).catch(() => undefined);
+      }
+    }
+  } catch {
+    // Pruning is housekeeping only.
+  }
 }

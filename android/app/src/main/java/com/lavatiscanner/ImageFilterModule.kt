@@ -8,7 +8,10 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.graphics.pdf.PdfRenderer
 import android.media.ExifInterface
+import android.os.ParcelFileDescriptor
+import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
@@ -41,6 +44,13 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
      * resolution afterward - imprecision here is what shows up as a
      * slightly crooked or clipped final scan, not just a fuzzy preview. */
     const val DETECT_SIZE = 640
+
+    /** Hard ceiling (px, long side) for the HD Quality filter. The real limit
+     * for a given phone is lower - see `hdLongSideCap`. */
+    const val HD_MAX_LONG_SIDE = 6000
+
+    /** Long side (px) HD upscaling stops at when only producing an on-screen preview. */
+    const val HD_PREVIEW_LONG_SIDE = 2400
   }
 
   /**
@@ -70,28 +80,60 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
   }
 
   /**
-   * Doubles resolution (bilinear-scaled, "filter=true" on
-   * `createScaledBitmap`), capped so the result never exceeds 3840px on the
-   * long side - a modest low-res scan still gets a real resolution bump
-   * without an already-large photo ballooning into an unreasonable memory
-   * footprint. Already-4K-or-larger sources are left untouched; only the
-   * sharpen/contrast pass in applyFilterPixels's "hdUpscale" branch still
-   * applies to them.
+   * Triples resolution (capped by `hdLongSideCap`, never above
+   * `HD_MAX_LONG_SIDE`), so a modest low-res scan still gets a real bump
+   * without an already-large photo ballooning past what the heap can hold.
+   * Scaled in 1.5x steps rather than one big jump: a single bilinear stretch
+   * of 2-3x shows blocky, stair-stepped edges on text, while chaining smaller
+   * filtered steps interpolates noticeably smoother (close to bicubic). If
+   * memory runs out partway, the largest size reached so far is returned
+   * instead of failing the whole filter.
    */
-  private fun upscaleForHd(bitmap: Bitmap): Bitmap {
+  /**
+   * Largest long side the heap can safely hold for this image. The filter
+   * pipeline keeps roughly five full-size copies alive at once (the bitmap
+   * plus several IntArray pixel buffers: ~20 bytes per pixel), so this sizes
+   * the image to ~60% of the app's max heap - the biggest result that phone
+   * can handle without an out-of-memory crash, up to HD_MAX_LONG_SIDE.
+   */
+  private fun hdLongSideCap(width: Int, height: Int): Int {
+    val budgetPixels = Runtime.getRuntime().maxMemory() * 0.6 / 20.0
+    val scale = sqrt(budgetPixels / (width.toDouble() * height.toDouble()))
+    val cap = (max(width, height) * scale).toInt()
+    return min(cap, HD_MAX_LONG_SIDE)
+  }
+
+  private fun upscaleForHd(bitmap: Bitmap, sizeLimit: Int): Bitmap {
     val longSide = max(bitmap.width, bitmap.height)
-    if (longSide >= 3840) {
+    val targetLongSide =
+        min(min(longSide * 3, hdLongSideCap(bitmap.width, bitmap.height)), sizeLimit)
+    if (targetLongSide <= longSide) {
       return bitmap
     }
-    val targetLongSide = min(longSide * 2, 3840)
-    val scale = targetLongSide.toFloat() / longSide
-    val newWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
-    val newHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
-    val scaled = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
-    if (scaled !== bitmap) {
-      bitmap.recycle()
+    var current = bitmap
+    try {
+      while (max(current.width, current.height) < targetLongSide) {
+        val currentLong = max(current.width, current.height)
+        val nextLong = min((currentLong * 1.5f).toInt(), targetLongSide)
+        if (nextLong <= currentLong) {
+          break
+        }
+        val scale = nextLong.toFloat() / currentLong
+        val next =
+            Bitmap.createScaledBitmap(
+                current,
+                (current.width * scale).toInt().coerceAtLeast(1),
+                (current.height * scale).toInt().coerceAtLeast(1),
+                true)
+        if (next !== current) {
+          current.recycle()
+        }
+        current = next
+      }
+    } catch (e: OutOfMemoryError) {
+      // Keep whatever size was reached.
     }
-    return scaled
+    return current
   }
 
   /**
@@ -243,6 +285,73 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
     return v.toInt().coerceIn(0, 255)
   }
 
+
+  /**
+   * Renders PDF pages to JPEG files at a chosen resolution. Unlike
+   * react-native-pdf-thumbnail (which draws each page at its native point
+   * size, ~595px wide for A4 - visibly soft once filtered and shown full
+   * screen), this scales so the page's longest side is `longSide` pixels.
+   * `pageIndex < 0` renders every page; otherwise just that one. Resolves to
+   * an array of {uri, width, height}. Runs off the UI thread and recycles
+   * each bitmap right after encoding so many pages don't pile up in memory.
+   */
+  @ReactMethod
+  fun renderPdfPages(
+      filePath: String,
+      pageIndex: Int,
+      longSide: Int,
+      quality: Int,
+      promise: Promise
+  ) {
+    Thread {
+      var descriptor: ParcelFileDescriptor? = null
+      var renderer: PdfRenderer? = null
+      try {
+        descriptor =
+            ParcelFileDescriptor.open(
+                File(filePath.removePrefix("file://")), ParcelFileDescriptor.MODE_READ_ONLY)
+        renderer = PdfRenderer(descriptor)
+        val first = if (pageIndex < 0) 0 else pageIndex
+        val last = if (pageIndex < 0) renderer.pageCount - 1 else pageIndex
+        if (first < 0 || last >= renderer.pageCount) {
+          promise.reject("INVALID_PAGE", "Page $pageIndex is out of range")
+          return@Thread
+        }
+        val results = Arguments.createArray()
+        for (i in first..last) {
+          val page = renderer.openPage(i)
+          var bitmap: Bitmap? = null
+          try {
+            val scale = (longSide.toFloat() / max(page.width, page.height)).coerceIn(1f, 6f)
+            val w = (page.width * scale).toInt().coerceAtLeast(1)
+            val h = (page.height * scale).toInt().coerceAtLeast(1)
+            bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(Color.WHITE)
+            page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+            val outFile = File.createTempFile("pdfpage_hd_${i}_", ".jpg", reactApplicationContext.cacheDir)
+            FileOutputStream(outFile).use { out ->
+              bitmap.compress(Bitmap.CompressFormat.JPEG, quality, out)
+            }
+            val map = Arguments.createMap()
+            map.putString("uri", "file://" + outFile.absolutePath)
+            map.putInt("width", w)
+            map.putInt("height", h)
+            results.pushMap(map)
+          } finally {
+            page.close()
+            bitmap?.recycle()
+          }
+        }
+        promise.resolve(results)
+      } catch (e: Exception) {
+        promise.reject("PDF_RENDER_ERROR", e.message, e)
+      } finally {
+        renderer?.close()
+        descriptor?.close()
+      }
+    }.start()
+  }
+
   /**
    * Renders one of the "real" scan filters (background-division shadow
    * removal, CLAHE, adaptive threshold, etc. - see `applyFilterPixels`)
@@ -268,7 +377,10 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         val cleanInput = inputPath.removePrefix("file://")
         srcBitmap = decodeSampledBitmap(cleanInput, maxDimension)
         if (filterId == "hdUpscale") {
-          srcBitmap = upscaleForHd(srcBitmap)
+          // On-screen previews (maxDimension > 0) only need enough pixels to
+          // look sharp on a phone display; the full-size upscale is for the
+          // saved page (maxDimension == 0).
+          srcBitmap = upscaleForHd(srcBitmap, if (maxDimension > 0) HD_PREVIEW_LONG_SIDE else Int.MAX_VALUE)
         }
         val width = srcBitmap.width
         val height = srcBitmap.height
@@ -355,7 +467,7 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         // function - this branch just sharpens the now-upscaled image to
         // counteract the inherent softness of bilinear scaling, plus a
         // mild contrast lift so it reads as crisper, not just bigger.
-        sharpenARGB(contrastBoost(pixels, 1.06f), w, h, 0.65f)
+        sharpenARGB(contrastBoost(pixels, 1.06f), w, h, 0.75f)
       }
       "cleanWhite" -> {
         // Per-channel auto white balance (percentile-stretched - see

@@ -30,7 +30,7 @@ import {
   isPdfRenderable,
   loadPdfForEditing,
 } from '../services/pdfEdit';
-import {renderAllPdfPages} from '../services/pdfThumbnail';
+import {renderAllPdfPages, renderPdfPagesHd} from '../services/pdfThumbnail';
 import {saveSessionAsDocument} from '../services/scanPipeline';
 import {documentNameExists} from '../db/database';
 import {readFileBytes} from '../services/pdfBytes';
@@ -40,6 +40,7 @@ import FeatureBadge from '../components/FeatureBadge';
 import Button from '../components/Button';
 import ScreenBackground from '../components/ScreenBackground';
 import FilteredImage from '../components/FilteredImage';
+import FilterRevealImage from '../components/FilterRevealImage';
 import ZoomableImage from '../components/ZoomableImage';
 import {FILTER_OPTIONS} from '../services/filters';
 import {FilterType} from '../types/models';
@@ -50,6 +51,10 @@ import {documentFeatureIcons as f} from '../theme/featureIcons';
 interface EditorPage extends EditablePage {
   key: string;
   thumbUri?: string;
+  /** Full-resolution render, made lazily the first time the page is opened
+   * in the preview - rendering every page at full size up front made large
+   * PDFs slow to open and filled the cache. */
+  hdUri?: string;
   thumbUnavailable?: boolean;
 }
 
@@ -67,7 +72,15 @@ export default function PdfEditorScreen({route, navigation}: Props) {
     null,
   );
   const [previewPage, setPreviewPage] = useState<EditorPage | null>(null);
-  const [dirty, setDirty] = useState(false);
+  // A ref, not state: the unsaved-changes guard below runs inside
+  // navigation.replace() right after a save, before React could re-render
+  // with dirty=false - state would still read true there and wrongly ask
+  // "Discard changes?" straight after a successful save. Nothing renders
+  // from this flag, so it needs no re-render anyway.
+  const dirtyRef = useRef(false);
+  const setDirty = (value: boolean) => {
+    dirtyRef.current = value;
+  };
   const [cropMode, setCropMode] = useState(false);
   const [cropRect, setCropRect] = useState<CropRect>({
     x: 0.05,
@@ -82,6 +95,10 @@ export default function PdfEditorScreen({route, navigation}: Props) {
   const cropDragStartRef = useRef<CropRect | null>(null);
   const sourceDocRef = useRef<PDFDocument | null>(null);
   const sourceUriRef = useRef<string | null>(null);
+  // Pages with an originalIndex below this exist in the source file; pages
+  // added later (images / other PDFs) only exist in the in-memory document.
+  const sourcePageCountRef = useRef(0);
+  const hdLoadingRef = useRef<Set<string>>(new Set());
 
   // Warn before losing edits that were never saved to the library or shared
   // out — mirrors React Navigation's documented "prevent leaving with
@@ -89,7 +106,7 @@ export default function PdfEditorScreen({route, navigation}: Props) {
   // action via navigation.dispatch if the user confirms discarding).
   useEffect(() => {
     const unsubscribe = navigation.addListener('beforeRemove', e => {
-      if (!dirty) {
+      if (!dirtyRef.current) {
         return;
       }
       e.preventDefault();
@@ -107,7 +124,7 @@ export default function PdfEditorScreen({route, navigation}: Props) {
       );
     });
     return unsubscribe;
-  }, [navigation, dirty]);
+  }, [navigation]);
 
   async function loadPdf(uri: string, name: string) {
     try {
@@ -115,6 +132,8 @@ export default function PdfEditorScreen({route, navigation}: Props) {
       const doc = await loadPdfForEditing(uri);
       sourceDocRef.current = doc;
       sourceUriRef.current = uri;
+      sourcePageCountRef.current = doc.getPageCount();
+      hdLoadingRef.current.clear();
       setFileName(name);
       setDirty(false);
       setPages(
@@ -133,7 +152,7 @@ export default function PdfEditorScreen({route, navigation}: Props) {
           setPages(prev => prev.map(p => ({...p, thumbUnavailable: true})));
           return;
         }
-        renderAllPdfPages(uri)
+        renderPdfPagesHd(uri, -1, LIST_THUMB_LONG_SIDE, 80)
           .then(thumbs => {
             setPages(prev =>
               prev.map((p, i) => ({...p, thumbUri: thumbs[i]?.uri})),
@@ -159,6 +178,39 @@ export default function PdfEditorScreen({route, navigation}: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [route.params?.uri]);
+
+  // Render the opened page at full resolution on demand.
+  useEffect(() => {
+    const page = previewPage;
+    const sourceUri = sourceUriRef.current;
+    if (
+      !page ||
+      !sourceUri ||
+      page.hdUri ||
+      page.thumbUnavailable ||
+      page.originalIndex >= sourcePageCountRef.current ||
+      hdLoadingRef.current.has(page.key)
+    ) {
+      return;
+    }
+    hdLoadingRef.current.add(page.key);
+    renderPdfPagesHd(sourceUri, page.originalIndex)
+      .then(([rendered]) => {
+        if (!rendered) {
+          return;
+        }
+        setPages(prev =>
+          prev.map(p => (p.key === page.key ? {...p, hdUri: rendered.uri} : p)),
+        );
+        setPreviewPage(prev =>
+          prev && prev.key === page.key ? {...prev, hdUri: rendered.uri} : prev,
+        );
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        hdLoadingRef.current.delete(page.key);
+      });
+  }, [previewPage]);
 
   async function handlePick() {
     const picked = await pickPdfFile();
@@ -267,16 +319,18 @@ export default function PdfEditorScreen({route, navigation}: Props) {
     }
   }
 
-  function handleRotate(key: string) {
-    setPages(prev =>
-      prev.map(p =>
-        p.key === key
-          ? {
-              ...p,
-              rotation: ((p.rotation + 90) % 360) as EditorPage['rotation'],
-            }
-          : p,
-      ),
+  function applyRotation(p: EditorPage, delta: 90 | -90): EditorPage {
+    return {
+      ...p,
+      rotation: ((p.rotation + delta + 360) % 360) as EditorPage['rotation'],
+    };
+  }
+
+  function handleRotate(key: string, delta: 90 | -90 = 90) {
+    setPages(prev => prev.map(p => (p.key === key ? applyRotation(p, delta) : p)));
+    // The preview holds its own copy of the page, so keep it in sync.
+    setPreviewPage(prev =>
+      prev && prev.key === key ? applyRotation(prev, delta) : prev,
     );
     setDirty(true);
   }
@@ -467,7 +521,7 @@ export default function PdfEditorScreen({route, navigation}: Props) {
     try {
       setBusy('save');
       const outputPath = await buildOutput();
-      const rendered = await renderAllPdfPages(outputPath);
+      const rendered = await renderPdfPagesHd(outputPath, -1, 2480, 92);
       const docId = await saveSessionAsDocument({
         docName: docName.trim() || defaultName,
         folderId: null,
@@ -524,7 +578,7 @@ export default function PdfEditorScreen({route, navigation}: Props) {
     try {
       setBusy('shareImage');
       const outputPath = await buildOutput();
-      const rendered = await renderAllPdfPages(outputPath, 90);
+      const rendered = await renderPdfPagesHd(outputPath, -1, 2480, 90);
       await Share.open({
         urls: rendered.map(r => r.uri),
         failOnCancel: false,
@@ -917,9 +971,10 @@ export default function PdfEditorScreen({route, navigation}: Props) {
                   style={styles.previewImage}
                   onSwipeLeft={() => handlePreviewSwipe(1)}
                   onSwipeRight={() => handlePreviewSwipe(-1)}>
-                  <FilteredImage
-                    uri={previewPage.thumbUri}
+                  <FilterRevealImage
+                    uri={previewPage.hdUri ?? previewPage.thumbUri}
                     filter={previewPage.filter ?? 'original'}
+                    maxDimension={PREVIEW_MAX_DIMENSION}
                     style={[
                       StyleSheet.absoluteFill,
                       {transform: [{rotate: `${previewPage.rotation}deg`}]},
@@ -941,24 +996,25 @@ export default function PdfEditorScreen({route, navigation}: Props) {
                 return (
                   <TouchableOpacity
                     key={option.id}
-                    style={styles.previewFilterChip}
+                    style={[
+                      styles.previewFilterChip,
+                      active && styles.previewFilterChipActive,
+                    ]}
                     onPress={() => handleSetFilter(previewPage.key, option.id)}>
                     <FilteredImage
                       uri={previewPage.thumbUri!}
                       filter={option.id}
-                      style={[
-                        styles.previewFilterThumb,
-                        active && styles.previewFilterThumbActive,
-                      ]}
+                      style={styles.previewFilterThumb}
                     />
-                    <Text
+                    <View
                       style={[
-                        styles.previewFilterLabel,
-                        active && styles.previewFilterLabelActive,
-                      ]}
-                      numberOfLines={1}>
-                      {option.label}
-                    </Text>
+                        styles.previewFilterLabelBar,
+                        active && styles.previewFilterLabelBarActive,
+                      ]}>
+                      <Text style={styles.previewFilterLabel} numberOfLines={1}>
+                        {option.label}
+                      </Text>
+                    </View>
                   </TouchableOpacity>
                 );
               })}
@@ -991,9 +1047,15 @@ export default function PdfEditorScreen({route, navigation}: Props) {
             <View style={styles.previewActions}>
               <TouchableOpacity
                 style={styles.previewActionBtn}
-                onPress={() => handleRotate(previewPage.key)}>
+                onPress={() => handleRotate(previewPage.key, -90)}>
+                <Icon name="rotate-left" size={22} color={colors.white} />
+                <Text style={styles.previewActionText}>Left</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.previewActionBtn}
+                onPress={() => handleRotate(previewPage.key, 90)}>
                 <Icon name="rotate-right" size={22} color={colors.white} />
-                <Text style={styles.previewActionText}>Rotate</Text>
+                <Text style={styles.previewActionText}>Right</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.previewActionBtn}
@@ -1023,6 +1085,10 @@ export default function PdfEditorScreen({route, navigation}: Props) {
 }
 
 const CROP_HANDLE_SIZE = 28;
+// Large on-screen preview resolution (the filmstrip thumbnails stay at 640).
+const PREVIEW_MAX_DIMENSION = 1800;
+// Page list thumbnails only need to be small and fast to produce.
+const LIST_THUMB_LONG_SIDE = 700;
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
@@ -1277,37 +1343,46 @@ const createStyles = (colors: AppColors) =>
       borderColor: colors.accent,
     },
     previewFilmstrip: {
-      maxHeight: 96,
+      maxHeight: 118,
       flexGrow: 0,
       flexShrink: 0,
     },
     previewFilmstripContent: {
-      paddingHorizontal: 20,
-      gap: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      gap: 12,
     },
     previewFilterChip: {
-      width: 56,
-      alignItems: 'center',
-    },
-    previewFilterThumb: {
-      width: 56,
-      height: 72,
-      borderRadius: 8,
+      width: 76,
+      height: 100,
+      borderRadius: 10,
+      overflow: 'hidden',
       borderWidth: 2,
       borderColor: 'transparent',
     },
-    previewFilterThumbActive: {
+    previewFilterChipActive: {
       borderColor: colors.accent,
     },
-    previewFilterLabel: {
-      marginTop: 4,
-      fontSize: 10,
-      fontWeight: '600',
-      color: 'rgba(255,255,255,0.75)',
-      textAlign: 'center',
+    previewFilterThumb: {
+      width: '100%',
+      height: '100%',
     },
-    previewFilterLabelActive: {
-      color: colors.accentDark,
+    previewFilterLabelBar: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      paddingVertical: 5,
+      alignItems: 'center',
+      backgroundColor: 'rgba(0,0,0,0.6)',
+    },
+    previewFilterLabelBarActive: {
+      backgroundColor: colors.accent,
+    },
+    previewFilterLabel: {
+      fontSize: 11,
+      fontWeight: '600',
+      color: colors.white,
     },
     previewActions: {
       flexDirection: 'row',

@@ -3,7 +3,7 @@ import RNFS from 'react-native-fs';
 import {ensureExportsDir} from './fileStorage';
 import {readFileBytes, writeFileBytes} from './pdfBytes';
 import {bakeFilterToFile, cropRegion} from './nativeImageFilter';
-import {renderPdfPage} from './pdfThumbnail';
+import {renderPdfPagesHd} from './pdfThumbnail';
 import {generateId} from '../utils/ids';
 import {FilterType} from '../types/models';
 
@@ -112,7 +112,12 @@ export async function buildEditedPdf(
       continue;
     }
 
-    const rendered = await renderPdfPage(sourceUri, p.originalIndex, 92);
+    const [rendered] = await renderPdfPagesHd(
+      sourceUri,
+      p.originalIndex,
+      2480,
+      92,
+    );
     let workingUri = rendered.uri;
 
     if (hasFilter) {

@@ -7,6 +7,9 @@ import HomeScreen from '../screens/HomeScreen';
 import AllFilesScreen from '../screens/FoldersScreen';
 import ToolsScreen from '../screens/ToolsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import SyncHeaderButton from '../components/SyncHeaderButton';
+import { startSyncWatcher } from '../services/syncScheduler';
+import { pruneCaches } from '../services/nativeImageFilter';
 import ScanTabBar from '../components/ScanTabButton';
 import { useTheme } from '../theme/ThemeContext';
 
@@ -40,6 +43,14 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export default function MainTabs() {
   const { colors } = useTheme();
+  // Loads sync preferences, tracks connectivity, and resumes pending uploads
+  // when the phone is allowed to sync again.
+  React.useEffect(() => {
+    startSyncWatcher();
+    // Housekeeping off the startup path so it can't delay first render.
+    const timer = setTimeout(pruneCaches, 8000);
+    return () => clearTimeout(timer);
+  }, []);
   return (
     <Tab.Navigator
       tabBar={props => <ScanTabBar {...props} />}
@@ -68,6 +79,7 @@ export default function MainTabs() {
         options={{
           title: 'Lavati Scanner',
           headerTitle: () => <HomeHeaderTitle />,
+          headerRight: () => <SyncHeaderButton />,
           tabBarLabel: 'Home',
           // Solid accent-blue header (not the shared pale gradient wash) -
           // HomeScreen's own search-bar block continues this same blue

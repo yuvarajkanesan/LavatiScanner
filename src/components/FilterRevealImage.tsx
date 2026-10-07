@@ -16,6 +16,9 @@ import {renderFilterPreview} from '../services/nativeImageFilter';
 interface Props {
   uri: string;
   filter: FilterType;
+  /** Longest side (px) of the baked preview - raise it for the one large
+   * on-screen preview so it isn't upscaled from the 640px filmstrip size. */
+  maxDimension?: number;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -29,7 +32,7 @@ const LINE_COLOR = '#1E9BFF';
  * on FilterScreen where the transition reads as a deliberate action, not
  * the small filmstrip thumbnails where it would just be visual noise.
  */
-export default function FilterRevealImage({uri, filter, style}: Props) {
+export default function FilterRevealImage({uri, filter, style, maxDimension}: Props) {
   const [containerHeight, setContainerHeight] = useState(0);
   const [animate, setAnimate] = useState(true);
   const [baseUri, setBaseUri] = useState<string>(uri);
@@ -65,7 +68,7 @@ export default function FilterRevealImage({uri, filter, style}: Props) {
       setTargetUri(uri);
       return undefined;
     }
-    renderFilterPreview(uri, filter)
+    renderFilterPreview(uri, filter, maxDimension)
       .then(result => {
         if (!cancelled) setTargetUri(result);
       })
@@ -75,7 +78,7 @@ export default function FilterRevealImage({uri, filter, style}: Props) {
     return () => {
       cancelled = true;
     };
-  }, [uri, filter]);
+  }, [uri, filter, maxDimension]);
 
   useEffect(() => {
     if (!targetUri || containerHeight === 0) return;

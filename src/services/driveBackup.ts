@@ -16,6 +16,14 @@ import {
 import {persistPageImage} from './fileStorage';
 import {renderAllPdfPages} from './pdfThumbnail';
 import {Document} from '../types/models';
+import {
+  getSyncSnapshot,
+  isDocumentSynced as isSynced,
+  markSyncFailed,
+  markSyncStarted,
+  markSyncSucceeded,
+  setSyncProgress,
+} from './syncStatus';
 
 export interface BackupProgress {
   current: number;
@@ -37,32 +45,44 @@ export interface BackupSummary {
  * needs uploading) and the document list UI (to render the sync badge), so
  * the two can never disagree. */
 export function isDocumentSynced(doc: Document): boolean {
-  return doc.driveSyncedAt != null && doc.driveSyncedAt >= doc.updatedAt;
+  return isSynced(doc);
 }
 
 /** Builds `doc`'s current PDF and uploads it to the app's Drive folder,
  * updating the existing Drive file in place if this document was backed up
  * before. Safe to call repeatedly - each call re-exports the latest pages. */
 export async function backupDocumentToDrive(doc: Document): Promise<void> {
+  // A second request for a document that's already uploading (e.g. the
+  // debounced auto-sync firing mid "Sync now") would just race the first.
+  if (getSyncSnapshot().syncingIds.includes(doc.id)) {
+    return;
+  }
   const pages = await listPages(doc.id);
   if (pages.length === 0) {
     return;
   }
-  const pdfPath = await buildPdfFromImages(
-    pages.map(p => p.filePath),
-    `drive_backup_${doc.id}`,
-    pages.map(p => parsePageOcrBlocks(p.ocrBlocks)),
-  );
+  markSyncStarted(doc.id);
   try {
-    const fileId = await uploadFileToDrive(
-      pdfPath,
-      `${doc.name}.pdf`,
-      'application/pdf',
-      doc.driveFileId,
+    const pdfPath = await buildPdfFromImages(
+      pages.map(p => p.filePath),
+      `drive_backup_${doc.id}`,
+      pages.map(p => parsePageOcrBlocks(p.ocrBlocks)),
     );
-    await setDocumentDriveSync(doc.id, fileId);
-  } finally {
-    RNFS.unlink(pdfPath).catch(() => undefined);
+    try {
+      const fileId = await uploadFileToDrive(
+        pdfPath,
+        `${doc.name}.pdf`,
+        'application/pdf',
+        doc.driveFileId,
+      );
+      await setDocumentDriveSync(doc.id, fileId);
+    } finally {
+      RNFS.unlink(pdfPath).catch(() => undefined);
+    }
+    markSyncSucceeded(doc.id);
+  } catch (err) {
+    markSyncFailed(doc.id, err instanceof Error ? err.message : String(err));
+    throw err;
   }
 }
 
@@ -83,19 +103,24 @@ export async function backupAllDocumentsToDrive(
     errors: [],
   };
 
-  for (let i = 0; i < docs.length; i++) {
-    const doc = docs[i];
-    onProgress?.({current: i + 1, total: docs.length, documentName: doc.name});
-    try {
-      await backupDocumentToDrive(doc);
-      summary.succeeded++;
-    } catch (err) {
-      summary.failed++;
-      summary.errors.push({
-        documentName: doc.name,
-        error: err instanceof Error ? err.message : String(err),
-      });
+  try {
+    for (let i = 0; i < docs.length; i++) {
+      const doc = docs[i];
+      setSyncProgress({current: i + 1, total: docs.length});
+      onProgress?.({current: i + 1, total: docs.length, documentName: doc.name});
+      try {
+        await backupDocumentToDrive(doc);
+        summary.succeeded++;
+      } catch (err) {
+        summary.failed++;
+        summary.errors.push({
+          documentName: doc.name,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
+  } finally {
+    setSyncProgress(null);
   }
 
   return summary;

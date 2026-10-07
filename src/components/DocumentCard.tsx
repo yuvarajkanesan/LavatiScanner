@@ -12,7 +12,8 @@ import { useTheme } from '../theme/ThemeContext';
 import { DocumentSummary } from '../types/models';
 import { formatBytes, formatDate } from '../utils/format';
 import { PercentWidth } from '../utils/responsive';
-import { isDocumentSynced } from '../services/driveBackup';
+import SyncStatusIcon from './SyncStatusIcon';
+import { useDocumentSyncState } from '../services/syncStatus';
 
 interface Props {
   document: DocumentSummary;
@@ -51,7 +52,7 @@ export default function DocumentCard({
 }: Props) {
   const { colors } = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
-  const synced = isDocumentSynced(document);
+  const syncState = useDocumentSyncState(document);
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
@@ -92,16 +93,8 @@ export default function DocumentCard({
           </View>
         )}
         {showSyncStatus && !selectionMode && (
-          <View
-            style={[
-              styles.syncBadge,
-              { backgroundColor: synced ? colors.success : colors.textMuted },
-            ]}>
-            <Icon
-              name={synced ? 'cloud-done' : 'cloud-queue'}
-              size={12}
-              color={colors.white}
-            />
+          <View style={styles.syncBadge}>
+            <SyncStatusIcon state={syncState} size={15} />
           </View>
         )}
       </View>
@@ -179,13 +172,14 @@ const createStyles = (colors: AppColors) => StyleSheet.create({
     position: 'absolute',
     top: 6,
     left: 6,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
-    borderColor: colors.white,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   name: {
     marginTop: 8,

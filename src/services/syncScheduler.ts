@@ -38,6 +38,11 @@ export function scheduleDocumentSync(docId: string): void {
  * deleting it, so a delayed upload can't re-create it in Drive after the
  * local delete (and Drive-side delete) already ran. */
 export function cancelScheduledSync(docId: string): void {
+  try {
+    require('./syncStatus').forgetSyncDocument(docId);
+  } catch {
+    // status store unavailable - nothing to clear
+  }
   const existing = pendingTimers.get(docId);
   if (existing) {
     clearTimeout(existing);
@@ -49,6 +54,14 @@ async function runSync(docId: string): Promise<void> {
   try {
     const {isGoogleDriveSignedIn} = require('./googleDrive');
     if (!isGoogleDriveSignedIn()) {
+      return;
+    }
+    // Auto backup off, offline, or Wi-Fi-only on mobile data: leave the
+    // document pending (its icon shows waiting/paused). It uploads on the
+    // next "Sync now" or, if auto backup is on, when connectivity returns.
+    const {getSyncSnapshot, getSyncBlockReason} = require('./syncStatus');
+    const snap = getSyncSnapshot();
+    if (!snap.settings.autoBackup || getSyncBlockReason(snap)) {
       return;
     }
     const {getDocument} = require('../db/database');
@@ -81,4 +94,46 @@ export function scheduleDriveDelete(driveFileId: string | null): void {
       // Best-effort - if this fails the file just lingers in Drive.
     }
   })();
+}
+
+let watcherStarted = false;
+
+/** Resumes uploads of anything still pending once the phone is allowed to
+ * sync again (back online, or onto Wi-Fi under "Wi-Fi only"). Call once at
+ * startup; also loads saved preferences and starts connectivity tracking. */
+export function startSyncWatcher(): void {
+  if (watcherStarted) {
+    return;
+  }
+  watcherStarted = true;
+  const {
+    initSyncStatus,
+    subscribeSyncStatus,
+    getSyncSnapshot,
+    getSyncBlockReason,
+  } = require('./syncStatus');
+  initSyncStatus();
+
+  let wasBlocked = getSyncBlockReason(getSyncSnapshot()) !== null;
+  subscribeSyncStatus(() => {
+    const snap = getSyncSnapshot();
+    const blocked = getSyncBlockReason(snap) !== null;
+    if (wasBlocked && !blocked && snap.settings.autoBackup) {
+      resumePendingSync();
+    }
+    wasBlocked = blocked;
+  });
+}
+
+async function resumePendingSync(): Promise<void> {
+  try {
+    const {isGoogleDriveSignedIn} = require('./googleDrive');
+    if (!isGoogleDriveSignedIn()) {
+      return;
+    }
+    const {backupAllDocumentsToDrive} = require('./driveBackup');
+    await backupAllDocumentsToDrive();
+  } catch {
+    // Best-effort, same as the debounced per-document sync.
+  }
 }
