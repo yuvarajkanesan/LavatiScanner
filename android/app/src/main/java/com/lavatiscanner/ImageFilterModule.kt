@@ -70,6 +70,31 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
   }
 
   /**
+   * Doubles resolution (bilinear-scaled, "filter=true" on
+   * `createScaledBitmap`), capped so the result never exceeds 3840px on the
+   * long side - a modest low-res scan still gets a real resolution bump
+   * without an already-large photo ballooning into an unreasonable memory
+   * footprint. Already-4K-or-larger sources are left untouched; only the
+   * sharpen/contrast pass in applyFilterPixels's "hdUpscale" branch still
+   * applies to them.
+   */
+  private fun upscaleForHd(bitmap: Bitmap): Bitmap {
+    val longSide = max(bitmap.width, bitmap.height)
+    if (longSide >= 3840) {
+      return bitmap
+    }
+    val targetLongSide = min(longSide * 2, 3840)
+    val scale = targetLongSide.toFloat() / longSide
+    val newWidth = (bitmap.width * scale).toInt().coerceAtLeast(1)
+    val newHeight = (bitmap.height * scale).toInt().coerceAtLeast(1)
+    val scaled = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+    if (scaled !== bitmap) {
+      bitmap.recycle()
+    }
+    return scaled
+  }
+
+  /**
    * BitmapFactory ignores the JPEG's EXIF orientation tag, but the rest of the
    * app (React Native's Image, and therefore the Trim screen's crop-corner
    * coordinates) sees the photo already rotated upright. Camera photos are
@@ -242,6 +267,9 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
       try {
         val cleanInput = inputPath.removePrefix("file://")
         srcBitmap = decodeSampledBitmap(cleanInput, maxDimension)
+        if (filterId == "hdUpscale") {
+          srcBitmap = upscaleForHd(srcBitmap)
+        }
         val width = srcBitmap.width
         val height = srcBitmap.height
         val pixels = IntArray(width * height)
@@ -320,6 +348,14 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         val gray = toGray(pixels)
         val leveled = normalizeGray(gray)
         sharpenARGB(contrastBoost(grayToARGB(leveled), 1.25f), w, h, 0.55f)
+      }
+      "hdUpscale" -> {
+        // The actual resolution increase already happened in
+        // applyScanFilter (see upscaleForHd) before pixels ever reach this
+        // function - this branch just sharpens the now-upscaled image to
+        // counteract the inherent softness of bilinear scaling, plus a
+        // mild contrast lift so it reads as crisper, not just bigger.
+        sharpenARGB(contrastBoost(pixels, 1.06f), w, h, 0.65f)
       }
       "cleanWhite" -> {
         // Per-channel auto white balance (percentile-stretched - see

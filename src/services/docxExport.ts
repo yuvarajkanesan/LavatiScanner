@@ -46,6 +46,14 @@ const ROOT_RELS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
  * to just a zip library (`jszip`) rather than a whole docx-authoring stack.
  * Pages without cached OCR text get OCR'd on the spot and the result is
  * cached back onto the page, same as the page-action "Extract Text" flow.
+ *
+ * Deliberately text-only, not a picture of the page: a version that
+ * embedded each page as an image (to carry over tables/photos exactly as
+ * they look) was tried and reverted - the point of exporting to Word is
+ * editable/searchable text, and a page-sized picture working against that
+ * wasn't the right trade-off. OCR only reads text, so a table's cell
+ * structure or an embedded photo still won't carry over; the PDF export
+ * remains the way to get an exact visual copy of the page.
  */
 export async function buildDocxFromPages(
   pages: Page[],

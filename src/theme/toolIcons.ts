@@ -25,6 +25,7 @@ export const toolIcons: Record<
   | 'collage'
   | 'watermark'
   | 'compression'
+  | 'exportword'
   | 'images'
   | 'share'
   | 'more',
@@ -48,6 +49,7 @@ export const toolIcons: Record<
   collage: {icon: 'image-multiple-outline', color: '#F97316'},
   watermark: {icon: 'water-outline', color: '#0EA5E9'},
   compression: {icon: 'arrow-collapse', color: '#14B8A6'},
+  exportword: {icon: 'file-word-outline', color: '#2B579A'},
   images: {icon: 'image-outline', color: '#22C55E'},
   share: {icon: 'share-outline', color: '#EF4444'},
   more: {icon: 'dots-grid', color: '#64748B'},

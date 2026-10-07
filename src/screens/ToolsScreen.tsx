@@ -1,13 +1,18 @@
 import React, {useMemo, useState} from 'react';
 import {ScrollView, StyleSheet, Text, TextInput, View} from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import Share from 'react-native-share';
 import Alert from '../utils/customAlert';
 import {TabScreenProps} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
 import {importFilesAsDocuments} from '../services/importFiles';
+import {listPages} from '../db/database';
+import {buildDocxFromPages} from '../services/docxExport';
+import {DocumentSummary} from '../types/models';
 import Icon from '../components/Icon';
 import ScreenBackground from '../components/ScreenBackground';
 import ToolGrid, {ToolShortcut} from '../components/ToolGrid';
+import DocumentPickerModal from '../components/DocumentPickerModal';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
 
@@ -21,6 +26,30 @@ export default function ToolsScreen({navigation}: Props) {
   const session = useScanSession();
   const [importing, setImporting] = useState(false);
   const [query, setQuery] = useState('');
+  const [exportWordPickerVisible, setExportWordPickerVisible] = useState(false);
+  const [exportingWord, setExportingWord] = useState(false);
+
+  async function handleExportWordPick(doc: DocumentSummary) {
+    setExportWordPickerVisible(false);
+    try {
+      setExportingWord(true);
+      const pages = await listPages(doc.id);
+      if (pages.length === 0) {
+        Alert.alert("Can't export", 'This document has no pages.');
+        return;
+      }
+      const docxPath = await buildDocxFromPages(pages, doc.name);
+      await Share.open({
+        url: `file://${docxPath}`,
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        failOnCancel: false,
+      });
+    } catch (error) {
+      Alert.alert('Export failed', 'Could not export this document to Word.');
+    } finally {
+      setExportingWord(false);
+    }
+  }
 
   function startScan() {
     session.startSession(null);
@@ -150,6 +179,12 @@ export default function ToolsScreen({navigation}: Props) {
       label: 'Compression',
       onPress: () => navigation.navigate('Compression'),
     },
+    {
+      key: 'exportword',
+      icon: 'description',
+      label: 'Export to Word',
+      onPress: () => setExportWordPickerVisible(true),
+    },
   ];
 
   const q = query.trim().toLowerCase();
@@ -187,7 +222,9 @@ export default function ToolsScreen({navigation}: Props) {
           <Section title="Process files">
             <ToolGrid
               shortcuts={filteredFiles}
-              busyKey={importing ? 'import' : null}
+              busyKey={
+                importing ? 'import' : exportingWord ? 'exportword' : null
+              }
             />
           </Section>
         )}
@@ -195,6 +232,12 @@ export default function ToolsScreen({navigation}: Props) {
           <Text style={styles.noMatches}>No tools match "{query}".</Text>
         )}
       </ScrollView>
+      <DocumentPickerModal
+        visible={exportWordPickerVisible}
+        title="Export to Word"
+        onClose={() => setExportWordPickerVisible(false)}
+        onPick={handleExportWordPick}
+      />
     </ScreenBackground>
   );
 }

@@ -22,4 +22,5 @@ export const FILTER_OPTIONS: FilterOption[] = [
   {id: 'bw', label: 'B&W'},
   {id: 'warm', label: 'Warm'},
   {id: 'cool', label: 'Cool'},
+  {id: 'hdUpscale', label: 'HD Quality'},
 ];

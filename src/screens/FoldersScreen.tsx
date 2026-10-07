@@ -141,7 +141,21 @@ export default function FoldersScreen({navigation}: Props) {
   const {colors} = useTheme();
   const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
-  const {contentMaxWidth, gridColumns} = useResponsive();
+  const {contentMaxWidth, gridColumns, isTablet, width: screenWidth} =
+    useResponsive();
+  // The hero banner should stay full-bleed edge-to-edge like every other
+  // screen's header - `centeredContent` below caps the file list/grid to a
+  // readable column on a tablet, but that same cap was also shrinking the
+  // header into a narrow floating card instead of a proper top banner.
+  // Negative margins break just the header back out to the real screen
+  // width while its own content (title, search bar) stays inset normally.
+  const heroBreakout = isTablet
+    ? {
+        width: screenWidth,
+        marginLeft: -(screenWidth - contentMaxWidth) / 2,
+        marginRight: -(screenWidth - contentMaxWidth) / 2,
+      }
+    : null;
   const cardWidthPercent = percentWidth(100 / gridColumns - 3);
   const [folders, setFolders] = useState<FolderRow[]>([]);
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
@@ -765,7 +779,12 @@ export default function FoldersScreen({navigation}: Props) {
         </View>
       ) : (
         <>
-          <View style={[styles.heroHeader, {paddingTop: insets.top + 10}]}>
+          <View
+            style={[
+              styles.heroHeader,
+              {paddingTop: insets.top + 10},
+              heroBreakout,
+            ]}>
             <Text style={styles.heroTitle}>All Files</Text>
             <View style={styles.searchRow}>
               <View style={styles.searchBar}>

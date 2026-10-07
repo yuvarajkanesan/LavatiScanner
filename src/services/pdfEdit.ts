@@ -2,10 +2,17 @@ import {degrees, PDFDocument, rgb, StandardFonts} from 'pdf-lib';
 import RNFS from 'react-native-fs';
 import {ensureExportsDir} from './fileStorage';
 import {readFileBytes, writeFileBytes} from './pdfBytes';
-import {bakeFilterToFile} from './nativeImageFilter';
+import {bakeFilterToFile, cropRegion} from './nativeImageFilter';
 import {renderPdfPage} from './pdfThumbnail';
 import {generateId} from '../utils/ids';
 import {FilterType} from '../types/models';
+
+export interface CropRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
 
 export interface EditablePage {
   /** Index of this page in the originally loaded PDF. */
@@ -13,9 +20,13 @@ export interface EditablePage {
   rotation: 0 | 90 | 180 | 270;
   /** Undefined/'original' keeps the page's own vector content (copied as-is
    * via pdf-lib's `copyPages`, full text/image quality preserved). Any other
-   * filter rasterizes the page instead (see `buildEditedPdf`), the same
-   * trade-off the scan pipeline already makes for a filtered page. */
+   * filter, or a `cropRect`, rasterizes the page instead (see
+   * `buildEditedPdf`), the same trade-off the scan pipeline already makes
+   * for a filtered/cropped page. */
   filter?: FilterType;
+  /** 0..1 ratios of the page - set once the user drags the crop handles in
+   * the preview and taps Apply. */
+  cropRect?: CropRect;
 }
 
 /**
@@ -71,11 +82,12 @@ export async function removePdfRestrictions(
 
 /**
  * Builds a new PDF from a source document given the desired page order,
- * per-page rotation and filter, and deletions (pages simply omitted from
+ * per-page rotation/filter/crop, and deletions (pages simply omitted from
  * `pages`). `sourceUri` (the original PDF's file path) is only needed for
- * pages that have a filter set - those get rasterized via Android's
- * PdfRenderer and re-baked through the same native scan-filter pipeline the
- * capture flow uses, rather than being copied as vector content.
+ * pages that have a filter or crop set - those get rasterized via Android's
+ * PdfRenderer and re-baked through the same native scan-filter/crop
+ * pipeline the capture flow uses, rather than being copied as vector
+ * content.
  */
 export async function buildEditedPdf(
   sourceUri: string,
@@ -90,7 +102,8 @@ export async function buildEditedPdf(
   const newDoc = await PDFDocument.create();
 
   for (const p of pages) {
-    if (!p.filter || p.filter === 'original') {
+    const hasFilter = !!p.filter && p.filter !== 'original';
+    if (!hasFilter && !p.cropRect) {
       const [copied] = await newDoc.copyPages(sourceDoc, [p.originalIndex]);
       if (p.rotation !== 0) {
         copied.setRotation(degrees(p.rotation));
@@ -100,14 +113,26 @@ export async function buildEditedPdf(
     }
 
     const rendered = await renderPdfPage(sourceUri, p.originalIndex, 92);
-    const bakedPath = `${RNFS.CachesDirectoryPath}/pdf_edit_filtered_${generateId()}.jpg`;
-    const filteredUri = await bakeFilterToFile(
-      rendered.uri,
-      p.filter,
-      bakedPath,
-      95,
-    );
-    const jpgBytes = await readFileBytes(filteredUri);
+    let workingUri = rendered.uri;
+
+    if (hasFilter) {
+      const bakedPath = `${RNFS.CachesDirectoryPath}/pdf_edit_filtered_${generateId()}.jpg`;
+      workingUri = await bakeFilterToFile(workingUri, p.filter!, bakedPath, 95);
+    }
+    if (p.cropRect) {
+      const croppedPath = `${RNFS.CachesDirectoryPath}/pdf_edit_cropped_${generateId()}.jpg`;
+      workingUri = await cropRegion(
+        workingUri,
+        croppedPath,
+        p.cropRect.x,
+        p.cropRect.y,
+        p.cropRect.width,
+        p.cropRect.height,
+        95,
+      );
+    }
+
+    const jpgBytes = await readFileBytes(workingUri);
     const jpgImage = await newDoc.embedJpg(jpgBytes);
     const {width, height} = jpgImage.size();
     const page = newDoc.addPage([width, height]);

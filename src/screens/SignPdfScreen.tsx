@@ -20,6 +20,7 @@ import {
 } from '../services/pdfEdit';
 import {renderPdfPage} from '../services/pdfThumbnail';
 import SignaturePad from '../components/SignaturePad';
+import ZoomableImage from '../components/ZoomableImage';
 import Icon from '../components/Icon';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
@@ -47,6 +48,12 @@ export default function SignPdfScreen() {
     height: number;
   } | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
+  const [choosePagePreview, setChoosePagePreview] = useState<{
+    uri: string;
+    width: number;
+    height: number;
+  } | null>(null);
+  const [loadingChoosePagePreview, setLoadingChoosePagePreview] = useState(false);
   const [signatureUri, setSignatureUri] = useState<string | null>(null);
   const [sigWidth, setSigWidth] = useState(SIG_DEFAULT);
   const [pos, setPos] = useState({x: 0, y: 0});
@@ -78,6 +85,36 @@ export default function SignPdfScreen() {
     });
     return unsubscribe;
   }, [navigation, signatureUri]);
+
+  // Lets the user see which page they're on before committing to it - the
+  // page stepper used to just show "Page N of M" as text, with no way to
+  // actually identify the right page without opening it elsewhere first.
+  useEffect(() => {
+    if (step !== 'choosePage' || !fileUri) {
+      return undefined;
+    }
+    let cancelled = false;
+    setLoadingChoosePagePreview(true);
+    renderPdfPage(fileUri, pageIndex)
+      .then(preview => {
+        if (!cancelled) {
+          setChoosePagePreview(preview);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setChoosePagePreview(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingChoosePagePreview(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [step, fileUri, pageIndex]);
 
   function handleClosePosition() {
     if (!signatureUri) {
@@ -360,17 +397,53 @@ export default function SignPdfScreen() {
 
   if (step === 'choosePage' && fileName) {
     return (
-      <View style={styles.center}>
-        <View style={styles.iconWrap}>
-          <Icon name="draw" size={40} color={colors.accent} />
+      <View style={styles.positionContainer}>
+        <View style={[styles.positionHeader, {paddingTop: insets.top + 10}]}>
+          <TouchableOpacity
+            onPress={() => {
+              setStep('pick');
+              setFileUri(null);
+              setFileName(null);
+              setChoosePagePreview(null);
+            }}
+            hitSlop={8}>
+            <Icon name="arrow-back" size={22} color={colors.white} />
+          </TouchableOpacity>
+          <Text style={styles.positionTitle} numberOfLines={1}>
+            {fileName}
+          </Text>
+          <View style={{width: 22}} />
         </View>
-        <Text style={styles.title} numberOfLines={1}>
-          {fileName}
+
+        <Text style={styles.choosePageHint}>
+          Find the page to sign below, then draw your signature.
         </Text>
-        <Text style={styles.description}>
-          Pick the page to sign, then draw your signature and drag it into place
-          on that page.
-        </Text>
+
+        <View style={styles.choosePagePreviewArea}>
+          {loadingChoosePagePreview || !choosePagePreview ? (
+            <ActivityIndicator color={colors.white} />
+          ) : (
+            <View
+              style={[
+                styles.previewWrap,
+                {
+                  aspectRatio:
+                    choosePagePreview.width / choosePagePreview.height,
+                },
+              ]}>
+              <ZoomableImage
+                key={pageIndex}
+                uri={choosePagePreview.uri}
+                style={StyleSheet.absoluteFill}
+                resizeMode="contain"
+                onSwipeLeft={() =>
+                  setPageIndex(p => Math.min(pageCount - 1, p + 1))
+                }
+                onSwipeRight={() => setPageIndex(p => Math.max(0, p - 1))}
+              />
+            </View>
+          )}
+        </View>
 
         <View style={styles.pageStepper}>
           <TouchableOpacity
@@ -380,10 +453,10 @@ export default function SignPdfScreen() {
             <Icon
               name="chevron-left"
               size={22}
-              color={pageIndex === 0 ? colors.textMuted : colors.accent}
+              color={pageIndex === 0 ? colors.textMuted : colors.white}
             />
           </TouchableOpacity>
-          <Text style={styles.stepperText}>
+          <Text style={styles.stepperTextDark}>
             Page {pageIndex + 1} of {pageCount}
           </Text>
           <TouchableOpacity
@@ -394,15 +467,17 @@ export default function SignPdfScreen() {
               name="chevron-right"
               size={22}
               color={
-                pageIndex === pageCount - 1 ? colors.textMuted : colors.accent
+                pageIndex === pageCount - 1 ? colors.textMuted : colors.white
               }
             />
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity style={styles.button} onPress={() => setStep('draw')}>
+        <TouchableOpacity
+          style={[styles.applyButton, {marginBottom: 20 + insets.bottom}]}
+          onPress={() => setStep('draw')}>
           <Icon name="draw" size={18} color={colors.white} />
-          <Text style={styles.buttonText}>Draw Signature</Text>
+          <Text style={styles.applyButtonText}>Draw Signature</Text>
         </TouchableOpacity>
       </View>
     );
@@ -469,12 +544,11 @@ const createStyles = (colors: AppColors) =>
     pageStepper: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
       gap: 16,
-      marginTop: 24,
-      backgroundColor: colors.surface,
+      alignSelf: 'center',
+      backgroundColor: 'rgba(255,255,255,0.1)',
       borderRadius: 12,
-      borderWidth: 1,
-      borderColor: colors.border,
       paddingVertical: 8,
       paddingHorizontal: 12,
     },
@@ -484,12 +558,26 @@ const createStyles = (colors: AppColors) =>
       alignItems: 'center',
       justifyContent: 'center',
     },
-    stepperText: {
+    stepperTextDark: {
       fontSize: 14,
       fontWeight: '600',
-      color: colors.text,
+      color: colors.white,
       minWidth: 110,
       textAlign: 'center',
+    },
+    choosePageHint: {
+      fontSize: 12.5,
+      color: '#9AA0A6',
+      textAlign: 'center',
+      marginTop: 2,
+      marginBottom: 8,
+      paddingHorizontal: 24,
+    },
+    choosePagePreviewArea: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 20,
     },
     button: {
       flexDirection: 'row',

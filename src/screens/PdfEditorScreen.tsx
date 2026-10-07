@@ -2,7 +2,9 @@ import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Image,
+  LayoutChangeEvent,
   Modal,
+  PanResponder,
   ScrollView,
   StyleSheet,
   Text,
@@ -23,6 +25,7 @@ import {pickPdfFile} from '../services/documentPicker';
 import {pickImportFiles} from '../services/filePicker';
 import {
   buildEditedPdf,
+  CropRect,
   EditablePage,
   isPdfRenderable,
   loadPdfForEditing,
@@ -37,6 +40,7 @@ import FeatureBadge from '../components/FeatureBadge';
 import Button from '../components/Button';
 import ScreenBackground from '../components/ScreenBackground';
 import FilteredImage from '../components/FilteredImage';
+import ZoomableImage from '../components/ZoomableImage';
 import {FILTER_OPTIONS} from '../services/filters';
 import {FilterType} from '../types/models';
 import {AppColors} from '../theme/colors';
@@ -64,6 +68,18 @@ export default function PdfEditorScreen({route, navigation}: Props) {
   );
   const [previewPage, setPreviewPage] = useState<EditorPage | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [cropMode, setCropMode] = useState(false);
+  const [cropRect, setCropRect] = useState<CropRect>({
+    x: 0.05,
+    y: 0.05,
+    width: 0.9,
+    height: 0.9,
+  });
+  const [cropImageLayout, setCropImageLayout] = useState({width: 0, height: 0});
+  const [cropAspectRatio, setCropAspectRatio] = useState(1);
+  const cropRectRef = useRef(cropRect);
+  const cropImageLayoutRef = useRef(cropImageLayout);
+  const cropDragStartRef = useRef<CropRect | null>(null);
   const sourceDocRef = useRef<PDFDocument | null>(null);
   const sourceUriRef = useRef<string | null>(null);
 
@@ -274,6 +290,125 @@ export default function PdfEditorScreen({route, navigation}: Props) {
     );
     setDirty(true);
   }
+
+  function handlePreviewSwipe(direction: 1 | -1) {
+    if (!previewPage) {
+      return;
+    }
+    const index = pages.findIndex(p => p.key === previewPage.key);
+    const next = pages[index + direction];
+    if (next?.thumbUri) {
+      setPreviewPage(next);
+    }
+  }
+
+  const CROP_MIN_SIZE = 0.08;
+
+  function handleEnterCropMode() {
+    if (!previewPage?.thumbUri) {
+      return;
+    }
+    const initial = previewPage.cropRect ?? {
+      x: 0.05,
+      y: 0.05,
+      width: 0.9,
+      height: 0.9,
+    };
+    cropRectRef.current = initial;
+    setCropRect(initial);
+    // The crop box's aspect ratio must match the image's own pixel
+    // dimensions exactly, so FilteredImage's `resizeMode="contain"` fills
+    // it edge to edge with no letterboxing - otherwise the drag-handle
+    // math (based on the container's own pixel layout) would be measuring
+    // against empty space rather than the actual image content.
+    Image.getSize(
+      previewPage.thumbUri,
+      (w, h) => setCropAspectRatio(w / h || 1),
+      () => setCropAspectRatio(1),
+    );
+    setCropMode(true);
+  }
+
+  function handleCancelCrop() {
+    setCropMode(false);
+  }
+
+  function handleApplyCrop() {
+    if (!previewPage) {
+      return;
+    }
+    const rect = cropRectRef.current;
+    setPages(prev =>
+      prev.map(p => (p.key === previewPage.key ? {...p, cropRect: rect} : p)),
+    );
+    setPreviewPage(prev =>
+      prev && prev.key === previewPage.key ? {...prev, cropRect: rect} : prev,
+    );
+    setDirty(true);
+    setCropMode(false);
+  }
+
+  function handleCropImageLayout(e: LayoutChangeEvent) {
+    const {width, height} = e.nativeEvent.layout;
+    cropImageLayoutRef.current = {width, height};
+    setCropImageLayout({width, height});
+  }
+
+  function makeCropHandleResponder(corner: 'tl' | 'br') {
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        cropDragStartRef.current = cropRectRef.current;
+      },
+      onPanResponderMove: (_, gesture) => {
+        const layout = cropImageLayoutRef.current;
+        const start = cropDragStartRef.current;
+        if (!layout.width || !layout.height || !start) {
+          return;
+        }
+        const dxRatio = gesture.dx / layout.width;
+        const dyRatio = gesture.dy / layout.height;
+        let next: CropRect;
+        if (corner === 'tl') {
+          const maxX = start.x + start.width - CROP_MIN_SIZE;
+          const maxY = start.y + start.height - CROP_MIN_SIZE;
+          const newX = Math.min(Math.max(start.x + dxRatio, 0), maxX);
+          const newY = Math.min(Math.max(start.y + dyRatio, 0), maxY);
+          next = {
+            x: newX,
+            y: newY,
+            width: start.x + start.width - newX,
+            height: start.y + start.height - newY,
+          };
+        } else {
+          const minRight = start.x + CROP_MIN_SIZE;
+          const minBottom = start.y + CROP_MIN_SIZE;
+          const right = Math.max(
+            Math.min(start.x + start.width + dxRatio, 1),
+            minRight,
+          );
+          const bottom = Math.max(
+            Math.min(start.y + start.height + dyRatio, 1),
+            minBottom,
+          );
+          next = {
+            x: start.x,
+            y: start.y,
+            width: right - start.x,
+            height: bottom - start.y,
+          };
+        }
+        cropRectRef.current = next;
+        setCropRect(next);
+      },
+    });
+  }
+
+  const cropTopLeftResponder = useRef(makeCropHandleResponder('tl')).current;
+  const cropBottomRightResponder = useRef(
+    makeCropHandleResponder('br'),
+  ).current;
 
   function handleDelete(key: string, pageNumber: number) {
     if (pages.length === 1) {
@@ -496,7 +631,12 @@ export default function PdfEditorScreen({route, navigation}: Props) {
               <View style={[styles.pageRow, isActive && styles.pageRowActive]}>
                 <TouchableOpacity
                   style={styles.pageThumbWrap}
-                  onPress={() => item.thumbUri && setPreviewPage(item)}
+                  onPress={() => {
+                    if (item.thumbUri) {
+                      setCropMode(false);
+                      setPreviewPage(item);
+                    }
+                  }}
                   onLongPress={drag}
                   disabled={isActive}
                   activeOpacity={0.8}>
@@ -645,25 +785,152 @@ export default function PdfEditorScreen({route, navigation}: Props) {
         visible={previewPage !== null}
         transparent
         animationType="fade"
-        onRequestClose={() => setPreviewPage(null)}>
+        onRequestClose={() => {
+          setCropMode(false);
+          setPreviewPage(null);
+        }}>
         <View style={styles.previewBackdrop}>
           <TouchableOpacity
             style={[styles.previewClose, {top: 20 + insets.top}]}
-            onPress={() => setPreviewPage(null)}
+            onPress={() => {
+              setCropMode(false);
+              setPreviewPage(null);
+            }}
             hitSlop={10}>
             <Icon name="close" size={26} color={colors.white} />
           </TouchableOpacity>
-          {previewPage?.thumbUri && (
-            <FilteredImage
-              uri={previewPage.thumbUri}
-              filter={previewPage.filter ?? 'original'}
-              style={[
-                styles.previewImage,
-                {transform: [{rotate: `${previewPage.rotation}deg`}]},
-              ]}
-            />
-          )}
-          {previewPage?.thumbUri && (
+
+          <View style={styles.previewImageArea}>
+            {previewPage?.thumbUri && cropMode ? (
+              <View
+                style={[styles.cropImageWrap, {aspectRatio: cropAspectRatio}]}
+                onLayout={handleCropImageLayout}>
+                <Image
+                  source={{uri: previewPage.thumbUri}}
+                  style={StyleSheet.absoluteFill}
+                  resizeMode="contain"
+                />
+                {cropImageLayout.width > 0 && (
+                  <>
+                    {/* Dimmed margins outside the crop rect */}
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.cropDim,
+                        {
+                          left: 0,
+                          top: 0,
+                          right: 0,
+                          height: cropRect.y * cropImageLayout.height,
+                        },
+                      ]}
+                    />
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.cropDim,
+                        {
+                          left: 0,
+                          bottom: 0,
+                          right: 0,
+                          top:
+                            (cropRect.y + cropRect.height) *
+                            cropImageLayout.height,
+                        },
+                      ]}
+                    />
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.cropDim,
+                        {
+                          left: 0,
+                          top: cropRect.y * cropImageLayout.height,
+                          width: cropRect.x * cropImageLayout.width,
+                          height: cropRect.height * cropImageLayout.height,
+                        },
+                      ]}
+                    />
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.cropDim,
+                        {
+                          right: 0,
+                          top: cropRect.y * cropImageLayout.height,
+                          width:
+                            (1 - cropRect.x - cropRect.width) *
+                            cropImageLayout.width,
+                          height: cropRect.height * cropImageLayout.height,
+                        },
+                      ]}
+                    />
+                    <View
+                      pointerEvents="none"
+                      style={[
+                        styles.cropRectBorder,
+                        {
+                          left: cropRect.x * cropImageLayout.width,
+                          top: cropRect.y * cropImageLayout.height,
+                          width: cropRect.width * cropImageLayout.width,
+                          height: cropRect.height * cropImageLayout.height,
+                        },
+                      ]}
+                    />
+                    <View
+                      {...cropTopLeftResponder.panHandlers}
+                      style={[
+                        styles.cropHandle,
+                        {
+                          left:
+                            cropRect.x * cropImageLayout.width -
+                            CROP_HANDLE_SIZE / 2,
+                          top:
+                            cropRect.y * cropImageLayout.height -
+                            CROP_HANDLE_SIZE / 2,
+                        },
+                      ]}
+                    />
+                    <View
+                      {...cropBottomRightResponder.panHandlers}
+                      style={[
+                        styles.cropHandle,
+                        {
+                          left:
+                            (cropRect.x + cropRect.width) *
+                              cropImageLayout.width -
+                            CROP_HANDLE_SIZE / 2,
+                          top:
+                            (cropRect.y + cropRect.height) *
+                              cropImageLayout.height -
+                            CROP_HANDLE_SIZE / 2,
+                        },
+                      ]}
+                    />
+                  </>
+                )}
+              </View>
+            ) : (
+              previewPage?.thumbUri && (
+                <ZoomableImage
+                  key={previewPage.key}
+                  style={styles.previewImage}
+                  onSwipeLeft={() => handlePreviewSwipe(1)}
+                  onSwipeRight={() => handlePreviewSwipe(-1)}>
+                  <FilteredImage
+                    uri={previewPage.thumbUri}
+                    filter={previewPage.filter ?? 'original'}
+                    style={[
+                      StyleSheet.absoluteFill,
+                      {transform: [{rotate: `${previewPage.rotation}deg`}]},
+                    ]}
+                  />
+                </ZoomableImage>
+              )
+            )}
+          </View>
+
+          {previewPage?.thumbUri && !cropMode && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -697,13 +964,42 @@ export default function PdfEditorScreen({route, navigation}: Props) {
               })}
             </ScrollView>
           )}
-          {previewPage && (
+
+          {previewPage && cropMode && (
+            <View style={styles.previewActions}>
+              <TouchableOpacity
+                style={styles.previewActionBtn}
+                onPress={handleCancelCrop}>
+                <Icon name="close" size={22} color={colors.white} />
+                <Text style={styles.previewActionText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.previewActionBtn}
+                onPress={handleApplyCrop}>
+                <Icon name="check" size={22} color={colors.accentDark} />
+                <Text
+                  style={[
+                    styles.previewActionText,
+                    {color: colors.accentDark},
+                  ]}>
+                  Apply Crop
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+          {previewPage && !cropMode && (
             <View style={styles.previewActions}>
               <TouchableOpacity
                 style={styles.previewActionBtn}
                 onPress={() => handleRotate(previewPage.key)}>
                 <Icon name="rotate-right" size={22} color={colors.white} />
                 <Text style={styles.previewActionText}>Rotate</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.previewActionBtn}
+                onPress={handleEnterCropMode}>
+                <Icon name="crop" size={22} color={colors.white} />
+                <Text style={styles.previewActionText}>Crop</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.previewActionBtn}
@@ -725,6 +1021,8 @@ export default function PdfEditorScreen({route, navigation}: Props) {
     </ScreenBackground>
   );
 }
+
+const CROP_HANDLE_SIZE = 28;
 
 const createStyles = (colors: AppColors) =>
   StyleSheet.create({
@@ -933,8 +1231,6 @@ const createStyles = (colors: AppColors) =>
     previewBackdrop: {
       flex: 1,
       backgroundColor: 'rgba(0,0,0,0.92)',
-      alignItems: 'center',
-      justifyContent: 'center',
     },
     previewClose: {
       position: 'absolute',
@@ -942,13 +1238,48 @@ const createStyles = (colors: AppColors) =>
       right: 20,
       zIndex: 1,
     },
+    // Takes all the leftover vertical space between the close button and
+    // the fixed-height filmstrip/actions below it, so those stay reachable
+    // (not pushed off-screen) regardless of screen height - a percentage-
+    // height image inside a centered column was the previous approach, and
+    // could crowd out the filmstrip on a short/tablet-landscape viewport.
+    previewImageArea: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: '7.5%',
+      paddingTop: 70,
+    },
     previewImage: {
-      width: '85%',
-      height: '58%',
+      width: '100%',
+      height: '100%',
+    },
+    cropImageWrap: {
+      width: '100%',
+      alignSelf: 'center',
+    },
+    cropDim: {
+      position: 'absolute',
+      backgroundColor: 'rgba(0,0,0,0.6)',
+    },
+    cropRectBorder: {
+      position: 'absolute',
+      borderWidth: 2,
+      borderColor: colors.white,
+    },
+    cropHandle: {
+      position: 'absolute',
+      width: CROP_HANDLE_SIZE,
+      height: CROP_HANDLE_SIZE,
+      borderRadius: CROP_HANDLE_SIZE / 2,
+      backgroundColor: colors.white,
+      borderWidth: 3,
+      borderColor: colors.accent,
     },
     previewFilmstrip: {
       maxHeight: 96,
-      marginTop: 18,
+      flexGrow: 0,
+      flexShrink: 0,
     },
     previewFilmstripContent: {
       paddingHorizontal: 20,
@@ -980,8 +1311,11 @@ const createStyles = (colors: AppColors) =>
     },
     previewActions: {
       flexDirection: 'row',
+      justifyContent: 'center',
       gap: 32,
-      marginTop: 20,
+      paddingVertical: 20,
+      flexGrow: 0,
+      flexShrink: 0,
     },
     previewActionBtn: {
       alignItems: 'center',

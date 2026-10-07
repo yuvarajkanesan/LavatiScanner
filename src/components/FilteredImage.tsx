@@ -40,7 +40,13 @@ export default function FilteredImage({uri, filter, style}: Props) {
           setDisplayUri(result);
         }
       })
-      .catch(() => {
+      .catch(error => {
+        // Falls back to the unfiltered source so the UI never shows a
+        // broken image, but that fallback is visually indistinguishable
+        // from "the filter didn't apply" - log it so a real native-side
+        // failure (OOM, a bad file path, a stripped method in a release
+        // build) leaves a trail in logcat instead of failing silently.
+        console.error('FilteredImage: filter render failed', uri, filter, error);
         if (!cancelled) {
           setDisplayUri(uri);
         }
