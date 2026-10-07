@@ -1,11 +1,21 @@
 import {degrees, PDFDocument, rgb, StandardFonts} from 'pdf-lib';
+import RNFS from 'react-native-fs';
 import {ensureExportsDir} from './fileStorage';
 import {readFileBytes, writeFileBytes} from './pdfBytes';
+import {bakeFilterToFile} from './nativeImageFilter';
+import {renderPdfPage} from './pdfThumbnail';
+import {generateId} from '../utils/ids';
+import {FilterType} from '../types/models';
 
 export interface EditablePage {
   /** Index of this page in the originally loaded PDF. */
   originalIndex: number;
   rotation: 0 | 90 | 180 | 270;
+  /** Undefined/'original' keeps the page's own vector content (copied as-is
+   * via pdf-lib's `copyPages`, full text/image quality preserved). Any other
+   * filter rasterizes the page instead (see `buildEditedPdf`), the same
+   * trade-off the scan pipeline already makes for a filtered page. */
+  filter?: FilterType;
 }
 
 /**
@@ -61,9 +71,14 @@ export async function removePdfRestrictions(
 
 /**
  * Builds a new PDF from a source document given the desired page order,
- * per-page rotation, and deletions (pages simply omitted from `pages`).
+ * per-page rotation and filter, and deletions (pages simply omitted from
+ * `pages`). `sourceUri` (the original PDF's file path) is only needed for
+ * pages that have a filter set - those get rasterized via Android's
+ * PdfRenderer and re-baked through the same native scan-filter pipeline the
+ * capture flow uses, rather than being copied as vector content.
  */
 export async function buildEditedPdf(
+  sourceUri: string,
   sourceDoc: PDFDocument,
   pages: EditablePage[],
   outputName: string,
@@ -73,17 +88,34 @@ export async function buildEditedPdf(
   }
 
   const newDoc = await PDFDocument.create();
-  const copiedPages = await newDoc.copyPages(
-    sourceDoc,
-    pages.map(p => p.originalIndex),
-  );
 
-  copiedPages.forEach((page, i) => {
-    if (pages[i].rotation !== 0) {
-      page.setRotation(degrees(pages[i].rotation));
+  for (const p of pages) {
+    if (!p.filter || p.filter === 'original') {
+      const [copied] = await newDoc.copyPages(sourceDoc, [p.originalIndex]);
+      if (p.rotation !== 0) {
+        copied.setRotation(degrees(p.rotation));
+      }
+      newDoc.addPage(copied);
+      continue;
     }
-    newDoc.addPage(page);
-  });
+
+    const rendered = await renderPdfPage(sourceUri, p.originalIndex, 92);
+    const bakedPath = `${RNFS.CachesDirectoryPath}/pdf_edit_filtered_${generateId()}.jpg`;
+    const filteredUri = await bakeFilterToFile(
+      rendered.uri,
+      p.filter,
+      bakedPath,
+      95,
+    );
+    const jpgBytes = await readFileBytes(filteredUri);
+    const jpgImage = await newDoc.embedJpg(jpgBytes);
+    const {width, height} = jpgImage.size();
+    const page = newDoc.addPage([width, height]);
+    page.drawImage(jpgImage, {x: 0, y: 0, width, height});
+    if (p.rotation !== 0) {
+      page.setRotation(degrees(p.rotation));
+    }
+  }
 
   const bytes = await newDoc.save();
   const exportsDir = await ensureExportsDir();

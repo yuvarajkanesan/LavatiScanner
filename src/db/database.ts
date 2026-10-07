@@ -191,6 +191,25 @@ export async function renameDocument(id: string, name: string): Promise<void> {
   scheduleDocumentSync(id);
 }
 
+/** Case-insensitive check for another document already using `name` -
+ * `excludeId` leaves the document being renamed out of its own check, so
+ * renaming "Invoice" to "invoice" (or just re-saving the same name) isn't
+ * flagged as a clash with itself. */
+export async function documentNameExists(
+  name: string,
+  excludeId?: string,
+): Promise<boolean> {
+  const db = await getDatabase();
+  const trimmed = name.trim();
+  const [result] = await db.executeSql(
+    excludeId
+      ? 'SELECT 1 FROM documents WHERE name = ? COLLATE NOCASE AND id != ? LIMIT 1;'
+      : 'SELECT 1 FROM documents WHERE name = ? COLLATE NOCASE LIMIT 1;',
+    excludeId ? [trimmed, excludeId] : [trimmed],
+  );
+  return result.rows.length > 0;
+}
+
 export async function moveDocumentToFolder(
   id: string,
   folderId: string | null,

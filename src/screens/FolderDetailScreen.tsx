@@ -16,6 +16,7 @@ import {RootStackParamList} from '../navigation/types';
 import {DocumentSummary, Folder} from '../types/models';
 import {
   deleteDocument,
+  documentNameExists,
   listDocuments,
   listFolders,
   moveDocumentToFolder,
@@ -127,7 +128,11 @@ export default function FolderDetailScreen({navigation, route}: Props) {
   }
 
   async function handleRename(doc: DocumentSummary) {
-    const name = await promptForText('Rename document', doc.name);
+    const name = await promptForText('Rename document', doc.name, async value =>
+      (await documentNameExists(value, doc.id))
+        ? 'A document with this name already exists.'
+        : null,
+    );
     if (name && name.trim()) {
       await renameDocument(doc.id, name.trim());
       load();

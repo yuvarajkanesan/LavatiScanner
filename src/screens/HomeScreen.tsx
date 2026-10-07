@@ -22,6 +22,7 @@ import {
   createFolder,
   deleteDocument,
   deleteFolder,
+  documentNameExists,
   listDocuments,
   listFolders,
   listPages,
@@ -472,7 +473,11 @@ export default function HomeScreen({navigation, route}: Props) {
     if (!doc) {
       return;
     }
-    const name = await promptForText('Rename document', doc.name);
+    const name = await promptForText('Rename document', doc.name, async value =>
+      (await documentNameExists(value, doc.id))
+        ? 'A document with this name already exists.'
+        : null,
+    );
     if (name && name.trim() && name.trim() !== doc.name) {
       await renameDocument(doc.id, name.trim());
       load();

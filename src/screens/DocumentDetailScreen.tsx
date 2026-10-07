@@ -21,6 +21,7 @@ import {
   createDocument,
   deletePage as deletePageRecord,
   deleteDocument,
+  documentNameExists,
   getDocument,
   listPages,
   moveDocumentToFolder,
@@ -342,7 +343,11 @@ export default function DocumentDetailScreen({navigation, route}: Props) {
     if (!doc) {
       return;
     }
-    const name = await promptForText('Rename document', doc.name);
+    const name = await promptForText('Rename document', doc.name, async value =>
+      (await documentNameExists(value, doc.id))
+        ? 'A document with this name already exists.'
+        : null,
+    );
     if (name && name.trim()) {
       await renameDocument(doc.id, name.trim());
       load();

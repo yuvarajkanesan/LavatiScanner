@@ -12,9 +12,15 @@ import { Alert } from 'react-native';
 import { AppColors } from '../theme/colors';
 import { useTheme } from '../theme/ThemeContext';
 
+/** Returns an error message to block submission (e.g. "Already in use"),
+ * or null/undefined when the value is acceptable. Can be async (e.g. a DB
+ * uniqueness check). */
+type Validator = (value: string) => string | null | undefined | Promise<string | null | undefined>;
+
 interface PendingRequest {
   title: string;
   initialValue: string;
+  validate?: Validator;
   resolve: (value: string | null) => void;
 }
 
@@ -23,11 +29,16 @@ let setPendingRequest: ((req: PendingRequest | null) => void) | null = null;
 /**
  * Cross-platform "prompt for a single line of text" helper. iOS gets the
  * native Alert.prompt; Android renders a small modal via TextPromptHost
- * (Android's Alert API has no text-input variant).
+ * (Android's Alert API has no text-input variant). `validate`, when given,
+ * is checked before resolving - on Android it's shown inline and the modal
+ * stays open; iOS (no inline-error support in Alert.prompt) shows a
+ * separate alert explaining the problem, then re-prompts with what the user
+ * typed so they can fix it without starting over.
  */
 export function promptForText(
   title: string,
   initialValue = '',
+  validate?: Validator,
 ): Promise<string | null> {
   if (Platform.OS === 'ios') {
     return new Promise(resolve => {
@@ -36,7 +47,24 @@ export function promptForText(
         undefined,
         [
           { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) },
-          { text: 'OK', onPress: text => resolve(text ?? null) },
+          {
+            text: 'OK',
+            onPress: async text => {
+              const value = text ?? '';
+              const error = validate ? await validate(value.trim()) : null;
+              if (error) {
+                Alert.alert(error, undefined, [
+                  {
+                    text: 'OK',
+                    onPress: () =>
+                      promptForText(title, value, validate).then(resolve),
+                  },
+                ]);
+                return;
+              }
+              resolve(value || null);
+            },
+          },
         ],
         'plain-text',
         initialValue,
@@ -49,7 +77,7 @@ export function promptForText(
       resolve(null);
       return;
     }
-    setPendingRequest({ title, initialValue, resolve });
+    setPendingRequest({ title, initialValue, validate, resolve });
   });
 }
 
@@ -59,11 +87,15 @@ export function TextPromptHost() {
   const [request, setRequest] = useState<PendingRequest | null>(null);
   const [value, setValue] = useState('');
   const [touched, setTouched] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [checking, setChecking] = useState(false);
 
   setPendingRequest = req => {
     setRequest(req);
     setValue(req?.initialValue ?? '');
     setTouched(false);
+    setError(null);
+    setChecking(false);
   };
 
   if (!request) return null;
@@ -73,15 +105,27 @@ export function TextPromptHost() {
     setRequest(null);
   }
 
-  const isValid = value.trim().length > 0;
-
-  function handleOk() {
-    if (!isValid) {
+  async function handleOk() {
+    const trimmed = value.trim();
+    if (!trimmed) {
       setTouched(true);
+      setError("Name can't be empty");
       return;
     }
-    close(value.trim());
+    if (request!.validate) {
+      setChecking(true);
+      const validationError = await request!.validate(trimmed);
+      setChecking(false);
+      if (validationError) {
+        setTouched(true);
+        setError(validationError);
+        return;
+      }
+    }
+    close(trimmed);
   }
+
+  const showError = touched && !!error;
 
   return (
     <Modal transparent animationType="fade" visible onRequestClose={() => close(null)}>
@@ -89,27 +133,29 @@ export function TextPromptHost() {
         <View style={styles.card}>
           <Text style={styles.title}>{request.title}</Text>
           <TextInput
-            style={[styles.input, touched && !isValid && styles.inputInvalid]}
+            style={[styles.input, showError && styles.inputInvalid]}
             value={value}
             onChangeText={text => {
               setValue(text);
-              if (touched) setTouched(false);
+              if (touched) {
+                setTouched(false);
+                setError(null);
+              }
             }}
             autoFocus
             selectTextOnFocus
             placeholderTextColor={colors.textMuted}
           />
-          {touched && !isValid && (
-            <Text style={styles.errorText}>Name can't be empty</Text>
-          )}
+          {showError && <Text style={styles.errorText}>{error}</Text>}
           <View style={styles.actions}>
             <TouchableOpacity style={styles.cancelBtn} onPress={() => close(null)}>
               <Text style={styles.cancelText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.okBtn, !isValid && styles.okBtnDisabled]}
+              style={[styles.okBtn, checking && styles.okBtnDisabled]}
+              disabled={checking}
               onPress={handleOk}>
-              <Text style={styles.okText}>OK</Text>
+              <Text style={styles.okText}>{checking ? '...' : 'OK'}</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -19,7 +19,7 @@ import {useFocusEffect} from '@react-navigation/native';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
 import {DocumentSummary} from '../types/models';
-import {listDocuments, listPages} from '../db/database';
+import {documentNameExists, listDocuments, listPages} from '../db/database';
 import {
   getPdfPageCount,
   isPdfRenderable,
@@ -166,7 +166,11 @@ export default function PdfMergeScreen({navigation}: Props) {
       return;
     }
     const defaultName = `Merged_${scanTimestampName()}`;
-    const name = await promptForText('Name this PDF', defaultName);
+    const name = await promptForText('Name this PDF', defaultName, async value =>
+      (await documentNameExists(value))
+        ? 'A document with this name already exists.'
+        : null,
+    );
     if (name === null) {
       return;
     }
@@ -248,6 +252,7 @@ export default function PdfMergeScreen({navigation}: Props) {
         })),
       });
       setQueue([]);
+      Alert.alert('Saved', 'Document saved successfully.');
       navigation.replace('DocumentDetail', {docId});
     } catch (error) {
       Alert.alert('Save failed', 'Could not save the merged PDF.');

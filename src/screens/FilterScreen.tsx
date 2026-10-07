@@ -183,12 +183,14 @@ export default function FilterScreen({navigation, route}: Props) {
       if (session.targetDocId) {
         docId = session.targetDocId;
         await appendSessionToDocument(docId, finalPages);
+        Alert.alert('Added', 'Page added successfully.');
       } else {
         docId = await saveSessionAsDocument({
           docName: session.docName,
           folderId: session.folderId,
           pages: finalPages,
         });
+        Alert.alert('Saved', 'Document saved successfully.');
       }
       session.reset();
       navigation.replace('DocumentDetail', {docId});

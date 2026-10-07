@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Image,
   Modal,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -28,12 +29,16 @@ import {
 } from '../services/pdfEdit';
 import {renderAllPdfPages} from '../services/pdfThumbnail';
 import {saveSessionAsDocument} from '../services/scanPipeline';
+import {documentNameExists} from '../db/database';
 import {readFileBytes} from '../services/pdfBytes';
 import {promptForText} from '../utils/promptForText';
 import Icon from '../components/Icon';
 import FeatureBadge from '../components/FeatureBadge';
 import Button from '../components/Button';
 import ScreenBackground from '../components/ScreenBackground';
+import FilteredImage from '../components/FilteredImage';
+import {FILTER_OPTIONS} from '../services/filters';
+import {FilterType} from '../types/models';
 import {AppColors} from '../theme/colors';
 import {useTheme} from '../theme/ThemeContext';
 import {documentFeatureIcons as f} from '../theme/featureIcons';
@@ -260,6 +265,16 @@ export default function PdfEditorScreen({route, navigation}: Props) {
     setDirty(true);
   }
 
+  function handleSetFilter(key: string, filterId: FilterType) {
+    setPages(prev =>
+      prev.map(p => (p.key === key ? {...p, filter: filterId} : p)),
+    );
+    setPreviewPage(prev =>
+      prev && prev.key === key ? {...prev, filter: filterId} : prev,
+    );
+    setDirty(true);
+  }
+
   function handleDelete(key: string, pageNumber: number) {
     if (pages.length === 1) {
       Alert.alert("Can't delete", 'A PDF needs at least one page.');
@@ -284,12 +299,17 @@ export default function PdfEditorScreen({route, navigation}: Props) {
   }
 
   async function buildOutput(): Promise<string> {
-    if (!sourceDocRef.current) {
+    if (!sourceDocRef.current || !sourceUriRef.current) {
       throw new Error('No PDF loaded');
     }
     const outputName =
       (fileName ?? 'document').replace(/\.pdf$/i, '') + '_edited';
-    return buildEditedPdf(sourceDocRef.current, pages, outputName);
+    return buildEditedPdf(
+      sourceUriRef.current,
+      sourceDocRef.current,
+      pages,
+      outputName,
+    );
   }
 
   async function handleSaveToDocuments() {
@@ -301,7 +321,11 @@ export default function PdfEditorScreen({route, navigation}: Props) {
       return;
     }
     const defaultName = (fileName ?? 'document').replace(/\.pdf$/i, '');
-    const docName = await promptForText('Save as', defaultName);
+    const docName = await promptForText('Save as', defaultName, async value =>
+      (await documentNameExists(value))
+        ? 'A document with this name already exists.'
+        : null,
+    );
     if (docName === null) {
       return;
     }
@@ -319,6 +343,7 @@ export default function PdfEditorScreen({route, navigation}: Props) {
         })),
       });
       setDirty(false);
+      Alert.alert('Saved', 'Document saved successfully.');
       navigation.replace('DocumentDetail', {docId});
     } catch (error) {
       console.error('PdfEditor: save to documents failed', error);
@@ -476,13 +501,13 @@ export default function PdfEditorScreen({route, navigation}: Props) {
                   disabled={isActive}
                   activeOpacity={0.8}>
                   {item.thumbUri ? (
-                    <Image
-                      source={{uri: item.thumbUri}}
+                    <FilteredImage
+                      uri={item.thumbUri}
+                      filter={item.filter ?? 'original'}
                       style={[
                         styles.pageThumb,
                         {transform: [{rotate: `${item.rotation}deg`}]},
                       ]}
-                      resizeMode="contain"
                     />
                   ) : item.thumbUnavailable ? (
                     <Icon
@@ -629,14 +654,48 @@ export default function PdfEditorScreen({route, navigation}: Props) {
             <Icon name="close" size={26} color={colors.white} />
           </TouchableOpacity>
           {previewPage?.thumbUri && (
-            <Image
-              source={{uri: previewPage.thumbUri}}
+            <FilteredImage
+              uri={previewPage.thumbUri}
+              filter={previewPage.filter ?? 'original'}
               style={[
                 styles.previewImage,
                 {transform: [{rotate: `${previewPage.rotation}deg`}]},
               ]}
-              resizeMode="contain"
             />
+          )}
+          {previewPage?.thumbUri && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.previewFilmstrip}
+              contentContainerStyle={styles.previewFilmstripContent}>
+              {FILTER_OPTIONS.map(option => {
+                const active = (previewPage.filter ?? 'original') === option.id;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={styles.previewFilterChip}
+                    onPress={() => handleSetFilter(previewPage.key, option.id)}>
+                    <FilteredImage
+                      uri={previewPage.thumbUri!}
+                      filter={option.id}
+                      style={[
+                        styles.previewFilterThumb,
+                        active && styles.previewFilterThumbActive,
+                      ]}
+                    />
+                    <Text
+                      style={[
+                        styles.previewFilterLabel,
+                        active && styles.previewFilterLabelActive,
+                      ]}
+                      numberOfLines={1}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
           )}
           {previewPage && (
             <View style={styles.previewActions}>
@@ -885,12 +944,44 @@ const createStyles = (colors: AppColors) =>
     },
     previewImage: {
       width: '85%',
-      height: '70%',
+      height: '58%',
+    },
+    previewFilmstrip: {
+      maxHeight: 96,
+      marginTop: 18,
+    },
+    previewFilmstripContent: {
+      paddingHorizontal: 20,
+      gap: 10,
+    },
+    previewFilterChip: {
+      width: 56,
+      alignItems: 'center',
+    },
+    previewFilterThumb: {
+      width: 56,
+      height: 72,
+      borderRadius: 8,
+      borderWidth: 2,
+      borderColor: 'transparent',
+    },
+    previewFilterThumbActive: {
+      borderColor: colors.accent,
+    },
+    previewFilterLabel: {
+      marginTop: 4,
+      fontSize: 10,
+      fontWeight: '600',
+      color: 'rgba(255,255,255,0.75)',
+      textAlign: 'center',
+    },
+    previewFilterLabelActive: {
+      color: colors.accentDark,
     },
     previewActions: {
       flexDirection: 'row',
       gap: 32,
-      marginTop: 28,
+      marginTop: 20,
     },
     previewActionBtn: {
       alignItems: 'center',
