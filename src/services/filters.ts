@@ -17,6 +17,7 @@ export const FILTER_OPTIONS: FilterOption[] = [
   {id: 'original', label: 'Original'},
   {id: 'lighten', label: 'Lighten'},
   {id: 'magicColor', label: 'Magic Color'},
+  {id: 'cleanWhite', label: 'Clean White'},
   {id: 'grayscale', label: 'Grayscale'},
   {id: 'bw', label: 'B&W'},
   {id: 'warm', label: 'Warm'},

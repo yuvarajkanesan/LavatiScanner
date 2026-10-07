@@ -321,6 +321,20 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
         val leveled = normalizeGray(gray)
         sharpenARGB(contrastBoost(grayToARGB(leveled), 1.25f), w, h, 0.55f)
       }
+      "cleanWhite" -> {
+        // Per-channel auto white balance (percentile-stretched - see
+        // normalizeChannels) neutralizes a warm/yellow cast from indoor
+        // lighting and pushes the paper background toward clean white while
+        // keeping full color for anything printed in color (letterheads,
+        // logos, stamps). The contrast lift afterward pushes dark text
+        // further toward black at the same time it pushes the background
+        // toward white, so this filter sharpens text contrast rather than
+        // risking it the way a flat brightness-only whitening would; the
+        // strongest sharpen pass here (matching "magicColor") keeps it from
+        // reading soft next to the punchier "bw" mode.
+        val balanced = normalizeChannels(pixels, 0.004f)
+        sharpenARGB(contrastBoost(balanced, 1.15f), w, h, 0.6f)
+      }
       else -> pixels
     }
   }
@@ -398,18 +412,79 @@ class ImageFilterModule(reactContext: ReactApplicationContext) :
     return out
   }
 
-  private fun normalizeGray(gray: IntArray): IntArray {
-    var mn = 255
-    var mx = 0
-    for (v in gray) {
-      if (v < mn) mn = v
-      if (v > mx) mx = v
+  /**
+   * The [clipFraction, 1-clipFraction] bounds of `values` (each 0-255) via a
+   * 256-bucket histogram, instead of raw min/max - a single outlier pixel
+   * (sensor noise, a staple, a glare speck) can otherwise compress the whole
+   * stretch range and wash out text contrast in the result. Still one flat
+   * pass over the whole image - same "global, bounded, predictable" shape as
+   * every other filter here, just robust to a handful of extreme pixels.
+   */
+  private fun percentileBounds(values: IntArray, clipFraction: Float): Pair<Int, Int> {
+    val hist = IntArray(256)
+    for (v in values) hist[v.coerceIn(0, 255)]++
+    val total = values.size
+    val clipCount = (total * clipFraction).toInt()
+    var cum = 0
+    var lo = 0
+    for (i in 0..255) {
+      cum += hist[i]
+      if (cum > clipCount) {
+        lo = i
+        break
+      }
     }
-    if (mx <= mn) return gray
+    cum = 0
+    var hi = 255
+    for (i in 255 downTo 0) {
+      cum += hist[i]
+      if (cum > clipCount) {
+        hi = i
+        break
+      }
+    }
+    if (hi <= lo) return Pair(0, 255)
+    return Pair(lo, hi)
+  }
+
+  private fun normalizeGray(gray: IntArray): IntArray {
+    val (mn, mx) = percentileBounds(gray, 0.004f)
     val range = (mx - mn).toFloat()
     val out = IntArray(gray.size)
     for (i in gray.indices) {
       out[i] = (((gray[i] - mn) / range) * 255f).toInt().coerceIn(0, 255)
+    }
+    return out
+  }
+
+  /** Per-channel version of `normalizeGray` - independently percentile-
+   * stretches R, G and B so each channel's own near-white highlight lands
+   * close to 255. A warm cast (e.g. R already near 255 while G/B lag behind)
+   * gets neutralized because the lagging channels stretch up to meet it,
+   * without touching hue-neutral dark text (whose own channel values are
+   * already near each channel's low end and barely move). */
+  private fun normalizeChannels(pixels: IntArray, clipFraction: Float): IntArray {
+    val r = IntArray(pixels.size)
+    val g = IntArray(pixels.size)
+    val b = IntArray(pixels.size)
+    for (i in pixels.indices) {
+      val p = pixels[i]
+      r[i] = (p shr 16) and 0xFF
+      g[i] = (p shr 8) and 0xFF
+      b[i] = p and 0xFF
+    }
+    val (rMin, rMax) = percentileBounds(r, clipFraction)
+    val (gMin, gMax) = percentileBounds(g, clipFraction)
+    val (bMin, bMax) = percentileBounds(b, clipFraction)
+    val rRange = (rMax - rMin).coerceAtLeast(1)
+    val gRange = (gMax - gMin).coerceAtLeast(1)
+    val bRange = (bMax - bMin).coerceAtLeast(1)
+    val out = IntArray(pixels.size)
+    for (i in pixels.indices) {
+      val nr = (((r[i] - rMin) * 255) / rRange).coerceIn(0, 255)
+      val ng = (((g[i] - gMin) * 255) / gRange).coerceIn(0, 255)
+      val nb = (((b[i] - bMin) * 255) / bRange).coerceIn(0, 255)
+      out[i] = (0xFF shl 24) or (nr shl 16) or (ng shl 8) or nb
     }
     return out
   }

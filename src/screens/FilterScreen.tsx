@@ -14,6 +14,7 @@ import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../navigation/types';
 import {useScanSession} from '../context/ScanSessionContext';
 import FilteredImage from '../components/FilteredImage';
+import FilterRevealImage from '../components/FilterRevealImage';
 import ZoomableImage from '../components/ZoomableImage';
 import {FILTER_OPTIONS} from '../services/filters';
 import {bakeFilterToFile} from '../services/nativeImageFilter';
@@ -252,7 +253,7 @@ export default function FilterScreen({navigation, route}: Props) {
 
       <View style={styles.previewWrap}>
         <ZoomableImage style={styles.previewImage}>
-          <FilteredImage
+          <FilterRevealImage
             uri={page.rawUri}
             filter={selectedFilter}
             style={StyleSheet.absoluteFill}

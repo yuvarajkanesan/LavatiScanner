@@ -860,30 +860,6 @@ export default function HomeScreen({navigation, route}: Props) {
           <Text style={styles.emptySubtitle}>
             Scan a document, or import a file or photo to get started.
           </Text>
-          <TouchableOpacity
-            style={styles.emptyPrimaryBtn}
-            onPress={handleNewScan}
-            activeOpacity={0.85}>
-            <Icon
-              name="line-scan"
-              family="community"
-              size={20}
-              color={colors.white}
-            />
-            <Text style={styles.emptyPrimaryBtnText}>Scan document</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.emptySecondaryBtn}
-            onPress={handleImportFilesTray}
-            activeOpacity={0.7}>
-            <Icon
-              name="file-import-outline"
-              family="community"
-              size={18}
-              color={colors.accent}
-            />
-            <Text style={styles.emptySecondaryBtnText}>Import files</Text>
-          </TouchableOpacity>
         </View>
       ) : filteredDocuments.length === 0 ? (
         <View style={styles.empty}>
@@ -1406,36 +1382,6 @@ const createStyles = (colors: AppColors) =>
       fontSize: 14,
       color: colors.textMuted,
       textAlign: 'center',
-    },
-    emptyPrimaryBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      marginTop: 24,
-      paddingHorizontal: 28,
-      height: 50,
-      borderRadius: 25,
-      backgroundColor: colors.accent,
-    },
-    emptyPrimaryBtnText: {
-      fontSize: 15,
-      fontWeight: '700',
-      color: colors.white,
-    },
-    emptySecondaryBtn: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 6,
-      marginTop: 14,
-      paddingVertical: 6,
-      paddingHorizontal: 10,
-    },
-    emptySecondaryBtnText: {
-      fontSize: 14,
-      fontWeight: '700',
-      color: colors.accent,
     },
     bulkBar: {
       flexDirection: 'row',

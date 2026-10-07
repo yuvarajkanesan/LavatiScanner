@@ -5,7 +5,8 @@ export type FilterType =
   | 'grayscale'
   | 'warm'
   | 'cool'
-  | 'bw';
+  | 'bw'
+  | 'cleanWhite';
 
 /** A single OCR'd line of text and its position, as 0..1 ratios of the page
  * image's own width/height (top-left origin) — JSON-serialized into

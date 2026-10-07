@@ -1,19 +1,13 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
 import { MainTabParamList } from './types';
 import HomeScreen from '../screens/HomeScreen';
 import AllFilesScreen from '../screens/FoldersScreen';
 import ToolsScreen from '../screens/ToolsScreen';
 import SettingsScreen from '../screens/SettingsScreen';
-import Icon from '../components/Icon';
+import ScanTabBar from '../components/ScanTabButton';
 import { useTheme } from '../theme/ThemeContext';
 
 function HomeHeaderTitle() {
@@ -40,66 +34,16 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '700',
   },
-  tabIconWrap: {
-    width: 46,
-    height: 30,
-    borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 });
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
-const ICONS_OUTLINE: Record<keyof MainTabParamList, string> = {
-  Home: 'home-outline',
-  AllFiles: 'file-multiple-outline',
-  Tools: 'tools',
-  Settings: 'cog-outline',
-};
-function TabIcon({
-  focused,
-  name,
-  activeColor,
-  inactiveColor,
-  size,
-}: {
-  focused: boolean;
-  name: string;
-  activeColor: string;
-  inactiveColor: string;
-  size: number;
-}) {
-  const scale = useSharedValue(1);
-  useEffect(() => {
-    if (focused) {
-      scale.value = withSpring(1.2, { damping: 6, stiffness: 300 }, () => {
-        scale.value = withSpring(1, { damping: 8, stiffness: 260 });
-      });
-    }
-  }, [focused, scale]);
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Animated.View style={[styles.tabIconWrap, animatedStyle]}>
-      <Icon
-        name={name}
-        family="community"
-        size={size - 2}
-        color={focused ? activeColor : inactiveColor}
-      />
-    </Animated.View>
-  );
-}
-
 export default function MainTabs() {
   const { colors } = useTheme();
-  const insets = useSafeAreaInsets();
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
+      tabBar={props => <ScanTabBar {...props} />}
+      screenOptions={{
         headerTitleStyle: { color: colors.text, fontWeight: '700' },
         headerStyle: {
           elevation: 2,
@@ -117,34 +61,7 @@ export default function MainTabs() {
           />
         ),
         headerShadowVisible: false,
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          borderTopColor: colors.border,
-          backgroundColor: colors.background,
-          height: 70 + insets.bottom,
-          paddingBottom: 16 + insets.bottom,
-          paddingTop: 8,
-          elevation: 8,
-          shadowColor: colors.black,
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.08,
-          shadowRadius: 6,
-        },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700' },
-        tabBarIcon: ({ focused, color, size }) => {
-          const name = route.name as keyof MainTabParamList;
-          return (
-            <TabIcon
-              focused={focused}
-              name={ICONS_OUTLINE[name]}
-              activeColor={colors.accent}
-              inactiveColor={color}
-              size={size}
-            />
-          );
-        },
-      })}>
+      }}>
       <Tab.Screen
         name="Home"
         component={HomeScreen}
